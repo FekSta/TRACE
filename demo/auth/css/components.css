@@ -1,0 +1,339 @@
+/* ==========================================
+   TRACE COMPONENTS
+========================================== */
+
+/* ========= Logo ========= */
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.logo img {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+}
+
+.logo h2 {
+    font-size: 1.7rem;
+    font-weight: 800;
+    color: #111827;
+}
+
+/* ========= Headings ========= */
+
+.heading {
+    margin: 30px 0;
+}
+
+.heading h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 10px;
+}
+
+.heading p {
+    color: #6b7280;
+    line-height: 1.6;
+}
+
+/* ========= Forms ========= */
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: .95rem;
+    font-weight: 600;
+    color: #374151;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+}
+
+/* ========= Inputs ========= */
+
+.input {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 15px;
+    transition: .3s;
+}
+
+.input:focus {
+    outline: none;
+    border-color: #d97706;
+    box-shadow: 0 0 0 3px rgba(217,119,6,.15);
+}
+
+/* ========= Password ========= */
+
+.password-field {
+    position: relative;
+}
+
+.password-field .input {
+    padding-right: 55px;
+}
+
+.toggle-password {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    transform: translateY(-50%);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #6b7280;
+    display: flex;
+    align-items: center;
+}
+
+.toggle-password:hover {
+    color: #111827;
+}
+
+/* ========= Error ========= */
+
+.error {
+    display: block;
+    margin-top: 6px;
+    color: #dc2626;
+    font-size: .85rem;
+}
+
+/* ========= Checkbox ========= */
+
+.checkbox-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 25px 0;
+}
+
+.checkbox-group input {
+    margin-top: 4px;
+}
+
+.checkbox-group label {
+    color: #6b7280;
+    line-height: 1.5;
+    font-size: .92rem;
+}
+
+.checkbox-group a {
+    color: #d97706;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.checkbox-group a:hover {
+    text-decoration: underline;
+}
+
+/* ========= Label Row ========= */
+
+.label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.label-row a {
+    color: #d97706;
+    text-decoration: none;
+    font-size: .9rem;
+}
+
+.label-row a:hover {
+    text-decoration: underline;
+}
+
+/* ========= Buttons ========= */
+
+.btn {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    border: none;
+    font-weight: 600;
+    font-size: .95rem;
+    transition: .3s ease;
+}
+
+.btn-primary {
+    background: #111827;
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: #000;
+}
+
+.btn-outline {
+    background: transparent;
+    color: #111827;
+    border: 1px solid #d1d5db;
+}
+
+.btn-outline:hover {
+    background: #f3f4f6;
+}
+
+/* ========= Success ========= */
+
+.success-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px;
+    text-align: center;
+}
+
+.success-icon {
+    width: 120px;
+    margin-bottom: 30px;
+}
+
+.success-panel h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 15px;
+    color: #111827;
+}
+
+.success-panel p {
+    color: #6b7280;
+    line-height: 1.7;
+    max-width: 420px;
+    margin-bottom: 35px;
+}
+
+/* ========= Image Side ========= */
+
+.auth-image {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+.auth-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15,23,42,.45);
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    padding: 40px;
+}
+
+.badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 22px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.15);
+    backdrop-filter: blur(12px);
+    color: #fff;
+    font-weight: 500;
+}
+
+.badge .material-symbols-outlined {
+    font-size: 22px;
+}
+
+/* ========= Footer ========= */
+
+footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 50px;
+    border-top: 1px solid #e5e7eb;
+    color: #6b7280;
+    font-size: .9rem;
+}
+
+footer nav {
+    display: flex;
+    gap: 20px;
+}
+
+footer a {
+    color: inherit;
+    text-decoration: none;
+}
+
+footer a:hover {
+    color: #111827;
+}
+
+/* ========= Bottom Link ========= */
+
+.bottom-link {
+    margin-top: 40px;
+    text-align: center;
+    color: #6b7280;
+}
+
+.bottom-link a {
+    color: #d97706;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.bottom-link a:hover {
+    text-decoration: underline;
+}
+
+/* ========= Responsive ========= */
+
+@media (max-width: 768px) {
+
+    .row {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-image {
+        display: none;
+    }
+
+    footer {
+        flex-direction: column;
+        gap: 16px;
+        text-align: center;
+        padding: 20px;
+    }
+
+    .success-panel {
+        padding: 40px 25px;
+    }
+}
