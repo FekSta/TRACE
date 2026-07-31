@@ -140,47 +140,167 @@ Case is marked as closed and archived in the system.
 
 # 🧩 Services
 
-## Authentication Service
+TRACE is organized into a 5-service architecture (**Auth, Backend, Dispatcher, Dashboard, Frontend**), with each domain assigned to the service that owns it.
 
+## 1. Authentication Service
+
+**Responsibility:** User identity, authentication, and authorization.
+
+**Features**
 - JWT Login
 - Registration
 - Password Reset
 - Role Management
 
+**User Roles**
+- User
+- Lost & Found Officer
+- Administrator
+
+**Database**
+- Users
+- Roles
+- Permissions
+- Refresh Tokens
+
 ---
 
-## Lost Item Service
+## 2. Backend Service
 
+**Responsibility:** Core Lost & Found management.
+
+**Modules**
+
+*Lost Item Management*
 - Lost Item CRUD
-- Images
+- Upload Images
 - Categories
 - Status Tracking
 
----
-
-## Found Item Service
-
+*Found Item Management*
 - Found Item CRUD
 - Storage Location
 - Photos
-- Availability
+- Availability Status
+
+*Officer Functions*
+- Verify Reports
+- Update Item Status
+- Approve Item Collection
+
+**Database**
+- Lost Items
+- Found Items
+- Categories
+- Images
+- Storage Locations
 
 ---
 
-## Matching Service
+## 3. Dispatcher Service (Matching & Claims)
 
+**Responsibility:** Business workflow and item matching.
+
+**Modules**
 - Automatic Matching
 - Match Scoring
 - Duplicate Detection
+- Ownership Claim Processing
+- Claim Verification
+- Claim Tracking
+
+**User Features**
+- Report Lost Items
+- Report Found Items
+- Track Claims
+
+**Officer Features**
+- Review Ownership Claims
+- Approve Item Collection
+
+**Database**
+- Matches
+- Claims
+- Verification Records
+- Collection Requests
 
 ---
 
-## Notification Service
+## 4. Dashboard Service
 
-- Email Alerts
-- Match Notifications
-- Claim Updates
-- Collection Reminders
+**Responsibility:** Reporting and analytics.
+
+**Administrator Features**
+- Manage Users
+- Generate Reports
+- Configure System Settings
+
+**Dashboard Metrics**
+- Total Lost Items
+- Total Found Items
+- Successful Matches
+- Pending Claims
+- Collected Items
+- Active Users
+- Monthly Reports
+- Category Statistics
+
+> **Note:** If user and category management become large or require complex workflows, these could later be moved into dedicated User Management and Configuration services. For a 5-service architecture, keeping the admin functions in the Dashboard service is a reasonable simplification.
+
+---
+
+## 5. Frontend
+
+**Responsibility:** User interface for all roles.
+
+**Pages — User**
+- Login/Register
+- Report Lost Item
+- Report Found Item
+- Upload Photos
+- Track Claims
+- Notifications
+
+**Pages — Lost & Found Officer**
+- Verify Reports
+- Review Claims
+- Approve Collections
+- Update Item Status
+
+**Pages — Administrator**
+- Dashboard
+- Manage Users
+- Manage Categories
+- Reports
+- System Settings
+
+---
+
+### 📋 Responsibility Matrix
+
+| Feature | Auth | Backend | Dispatcher | Dashboard | Frontend |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Login/Register | ✓ | | | | ✓ |
+| Role Management | ✓ | | | ✓ | ✓ |
+| Lost Item CRUD | | ✓ | | | ✓ |
+| Found Item CRUD | | ✓ | | | ✓ |
+| Upload Photos | | ✓ | | | ✓ |
+| Categories | | ✓ | | ✓ | ✓ |
+| Status Tracking | | ✓ | ✓ | | ✓ |
+| Automatic Matching | | | ✓ | | ✓ |
+| Match Scoring | | | ✓ | | ✓ |
+| Duplicate Detection | | | ✓ | | ✓ |
+| Ownership Claims | | | ✓ | | ✓ |
+| Verify Reports | | ✓ | ✓ | | ✓ |
+| Approve Collection | | ✓ | ✓ | | ✓ |
+| Email Alerts | | | ✓ | | ✓ |
+| Match Notifications | | | ✓ | | ✓ |
+| Claim Updates | | | ✓ | | ✓ |
+| Collection Reminders | | | ✓ | | ✓ |
+| Reports & Analytics | | | | ✓ | ✓ |
+| System Settings | | | | ✓ | ✓ |
+
+This organization keeps each service focused on a single responsibility: **Auth** manages identity and access, **Backend** owns lost/found item data, **Dispatcher** handles matching and claim workflows, **Dashboard** provides administration and analytics, and **Frontend** presents the interfaces for users, officers, and administrators.
 
 ---
 
