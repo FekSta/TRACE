@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRACE | Register</title>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+
+    <!-- Material Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
+
+    <!-- Shared CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/components.css">
+
+    <!-- Shared JS -->
+    <script src="js/auth.js" defer></script>
+    <script src="js/app.js" defer></script>
+</head>
+
+<body>
+
+<div class="auth-container">
+
+    <!-- Left Side -->
+    <section class="auth-form">
+
+        <div>
+
+            <!-- Logo -->
+            <div class="logo">
+                <img src="images/logo.png" alt="TRACE Logo">
+                <h2>TRACE</h2>
+            </div>
+
+            <p class="tagline">
+                Every lost item leaves a trace.
+            </p>
+
+            <div class="heading">
+                <h1>Create Account</h1>
+                <p>
+                    Join TRACE to report, track, and recover lost items.
+                </p>
+            </div>
+
+            <form id="registerForm">
+
+                <!-- Name -->
+                <div class="row">
+
+                    <div class="form-group">
+                        <label>First Name</label>
+
+                        <input
+                            type="text"
+                            id="firstName"
+                            class="input"
+                            placeholder="John"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label>Last Name</label>
+
+                        <input
+                            type="text"
+                            id="lastName"
+                            class="input"
+                            placeholder="Doe"
+                            required
+                        >
+                    </div>
+
+                </div>
+
+                <!-- Email -->
+                <div class="form-group">
+
+                    <label>Email Address</label>
+
+                    <input
+                        type="email"
+                        id="email"
+                        class="input"
+                        placeholder="name@example.com"
+                        required
+                    >
+
+                    <small class="error" id="emailError"></small>
+
+                </div>
+
+                <!-- Password -->
+                <div class="form-group">
+
+                    <label>Password</label>
+
+                    <div class="password-field">
+
+                        <input
+                            type="password"
+                            id="password"
+                            class="input"
+                            placeholder="Create a password"
+                            required
+                        >
+
+                        <button
+                            type="button"
+                            class="toggle-password"
+                            data-target="password">
+
+                            <span class="material-symbols-outlined">
+                                visibility
+                            </span>
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+                <!-- Confirm Password -->
+                <div class="form-group">
+
+                    <label>Confirm Password</label>
+
+                    <div class="password-field">
+
+                        <input
+                            type="password"
+                            id="confirmPassword"
+                            class="input"
+                            placeholder="Confirm password"
+                            required
+                        >
+
+                        <button
+                            type="button"
+                            class="toggle-password"
+                            data-target="confirmPassword">
+
+                            <span class="material-symbols-outlined">
+                                visibility
+                            </span>
+
+                        </button>
+
+                    </div>
+
+                    <small class="error" id="passwordError"></small>
+
+                </div>
+
+                <!-- Terms -->
+                <div class="checkbox-group">
+
+                    <input
+                        type="checkbox"
+                        id="terms"
+                        required
+                    >
+
+                    <label for="terms">
+                        I agree to the
+                        <a href="#">Terms & Conditions</a>
+                        and
+                        <a href="#">Privacy Policy</a>.
+                    </label>
+
+                </div>
+
+                <!-- Submit -->
+                <button
+                    type="submit"
+                    class="btn btn-primary">
+                    Create Account
+                </button>
+
+            </form>
+
+        </div>
+
+        <!-- Bottom -->
+        <div class="bottom-link">
+
+            Already have an account?
+
+            <a href="login.html">
+                Login
+            </a>
+
+        </div>
+
+    </section>
+
+    <!-- Right Side -->
+    <section class="auth-image">
+
+        <img
+            src="images/login-side-image.jpeg"
+            alt="TRACE Illustration"
+        >
+
+        <div class="overlay">
+
+            <div class="badge">
+
+                <span class="material-symbols-outlined">
+                    location_on
+                </span>
+
+                <span>
+                    Every lost item leaves a trace.
+                </span>
+
+            </div>
+
+        </div>
+
+    </section>
+
+</div>
+
+<footer>
+
+    <p>
+        © 2026 TRACE. All rights reserved.
+    </p>
+
+    <nav>
+
+        <a href="#">Privacy</a>
+
+        <a href="#">Terms</a>
+
+        <a href="#">Support</a>
+
+    </nav>
+
+</footer>
+
+</body>
+</html>
