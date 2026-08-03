@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="/assets/logos/trace_logo.png" alt="TRACE logo" width="200" height="200">
+    <img src="/assets/logos/trace-logo.png" alt="TRACE logo" width="400" height="250">
 </div>
 
 > Every lost item leaves a trace. 🧭
