@@ -37,7 +37,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # The demo of the product
-          path: './demo/auth/'
+          path: './demo/'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
