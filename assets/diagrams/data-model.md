@@ -8,7 +8,7 @@
 
 ---
 
-# Core Business Layer
+# Core Business Layer 
 
 These entities represent the primary business objects that the system is designed to manage.
 
@@ -16,7 +16,7 @@ These entities represent the primary business objects that the system is designe
 
 ## 1. User
 
-**Purpose**
+**Purpose** 
 
 Represents every person interacting with the system, including students, staff members, Lost & Found Officers, and Administrators.
 
@@ -37,7 +37,7 @@ Represents every person interacting with the system, including students, staff m
 
 ## 2. LostItem
 
-**Purpose**
+**Purpose** 
 
 Stores reports of items that users have lost.
 
@@ -59,7 +59,7 @@ Stores reports of items that users have lost.
 
 ## 3. FoundItem
 
-**Purpose**
+**Purpose** 
 
 Stores reports of items that have been found.
 
@@ -80,7 +80,7 @@ Stores reports of items that have been found.
 
 ## 4. Claim
 
-**Purpose**
+**Purpose** 
 
 Represents ownership claims submitted by users for found items.
 
@@ -101,7 +101,7 @@ Represents ownership claims submitted by users for found items.
 
 ## 5. Category
 
-**Purpose**
+**Purpose** 
 
 Defines the categories used to classify lost and found items.
 
@@ -125,7 +125,7 @@ These entities support business workflows, automation, auditing, and system oper
 
 ## 6. Match
 
-**Purpose**
+**Purpose** 
 
 Stores potential matches generated automatically by the matching algorithm.
 
@@ -143,7 +143,7 @@ Stores potential matches generated automatically by the matching algorithm.
 
 ## 7. Notification
 
-**Purpose**
+**Purpose** 
 
 Stores notifications sent to users.
 
@@ -161,7 +161,7 @@ Stores notifications sent to users.
 
 ## 8. VerificationRecord
 
-**Purpose**
+**Purpose** 
 
 Maintains records of the ownership verification process.
 
@@ -179,7 +179,7 @@ Maintains records of the ownership verification process.
 
 ## 9. CollectionRecord
 
-**Purpose**
+**Purpose** 
 
 Records successful collection of recovered items.
 
@@ -197,7 +197,7 @@ Records successful collection of recovered items.
 
 ## 10. Attachment
 
-**Purpose**
+**Purpose** 
 
 Stores uploaded images and supporting documents.
 
@@ -215,7 +215,7 @@ Stores uploaded images and supporting documents.
 
 ## 11. AuditLog
 
-**Purpose**
+**Purpose** 
 
 Maintains a complete audit trail of significant system events.
 
@@ -231,7 +231,7 @@ Maintains a complete audit trail of significant system events.
 
 ---
 
-# Entity Summary
+# Entity Summary 
 
 ## Core Business Layer
 

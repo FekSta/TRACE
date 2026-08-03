@@ -14,7 +14,7 @@ The TRACE system consists of three primary user roles:
 
 ---
 
-# 1. User
+# 1. User 
 
 A **User** is any student, employee, or visitor who uses the system to report and recover lost property.
 
@@ -59,7 +59,7 @@ A **User** is any student, employee, or visitor who uses the system to report an
 
 ---
 
-# 2. Lost & Found Officer
+# 2. Lost & Found Officer 
 
 A **Lost & Found Officer** manages verification and recovery workflows.
 
@@ -84,7 +84,7 @@ A **Lost & Found Officer** manages verification and recovery workflows.
 
 ---
 
-# 3. Administrator
+# 3. Administrator 
 
 The **Administrator** oversees the entire TRACE platform.
 
@@ -146,7 +146,7 @@ View system metrics such as:
 
 ## Authentication
 
-### User
+### User 
 
 - Register
 - Log in
@@ -160,7 +160,7 @@ View system metrics such as:
 
 ## Lost Item Management
 
-### User
+### User 
 
 - Create lost item report
 - Edit lost item report
@@ -256,4 +256,3 @@ View system metrics such as:
 | View Dashboard Analytics | | | ✓ |
 
 ---
-
