@@ -2,7 +2,7 @@
 
 This document summarizes the actions that each user role can perform within the **TRACE (Tracking, Recovery, And Claim Engine)** system, based on the provided project documentation.
 
----
+----
 
 # User Roles
 

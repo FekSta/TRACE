@@ -1,6 +1,5 @@
 # 🗄️ TRACE — Entity Relationship Diagram
 
-
 # TRACE Core Business Layer & Supporting Layer Entities
 
 > **TRACE (Tracking, Recovery, And Claim Engine)**
@@ -54,6 +53,7 @@ Stores reports of items that users have lost.
 | DateLost | Date | Date item was lost |
 | LocationLost | String | Last known location |
 | Status | Enum | Reported, Matched, Claimed, Closed |
+
 
 ---
 
