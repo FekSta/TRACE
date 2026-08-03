@@ -392,7 +392,7 @@ Administrators can generate reports including:
 
 This project satisfies the CMPG223 requirements by including:
 
-✔ More than four entities (Users, Lost Items, Found Items, Claims, Categories, Locations)
+✔ More than four entities (Users, Lost Items, Found Items, Claims, Categories)
 
 ✔ Full CRUD functionality
 
