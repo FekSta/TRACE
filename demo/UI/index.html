@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TRACE | Lost &amp; Found Administration</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script src="Script.js" defer></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;family=Manrope:wght@100..900&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="Styles.css">
+</head>
+
+<body class="overflow-hidden">
+
+  <!-- ============================================================
+       SHARED SIDEBAR (used by all sections)
+       ============================================================ -->
+  <aside class="w-sidebar-width h-screen fixed left-0 top-0 flex flex-col p-md z-50 bg-surface-container-low border-r border-outline-variant">
+    <div class="flex items-center gap-3 px-2 py-6">
+      <div class="relative w-10 h-10 flex items-center justify-center rounded-lg bg-primary">
+        <span class="material-symbols-outlined text-headline-sm text-on-primary" aria-hidden="true">location_on</span>
+        <div class="absolute inset-0 border-2 border-dashed border-white/20 rounded-lg animate-pulse"></div>
+      </div>
+      <div class="flex flex-col">
+        <h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">TRACE</h1>
+        <p class="text-[10px] text-on-surface-variant uppercase tracking-widest font-semibold">Lost &amp; Found Administration</p>
+      </div>
+    </div>
+
+    <nav class="mt-4 flex-1 space-y-2" id="sidebar-nav" aria-label="Primary">
+      <a class="nav-link active" data-target="dashboard" role="button" tabindex="0" aria-current="page">
+        <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+        <span>Dashboard</span>
+      </a>
+      <a class="nav-link" data-target="users" role="button" tabindex="0">
+        <span class="material-symbols-outlined" aria-hidden="true">group</span>
+        <span>Manage Users</span>
+      </a>
+      <a class="nav-link" data-target="categories" role="button" tabindex="0">
+        <span class="material-symbols-outlined" aria-hidden="true">category</span>
+        <span>Manage Categories</span>
+      </a>
+      <a class="nav-link" data-target="reports" role="button" tabindex="0">
+        <span class="material-symbols-outlined" aria-hidden="true">assessment</span>
+        <span>Reports</span>
+      </a>
+      <a class="nav-link" data-target="settings" role="button" tabindex="0">
+        <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+        <span>System Settings</span>
+      </a>
+    </nav>
+
+    <div class="mt-auto border-t pt-4 px-2 border-outline-variant">
+      <div class="flex items-center gap-3 p-2 rounded-xl transition-colors cursor-pointer hover:bg-surface-container-high">
+        <div class="w-10 h-10 rounded-full bg-surface-variant border flex items-center justify-center overflow-hidden border-outline-variant">
+          <div class="w-full h-full bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center text-white text-sm font-bold">MF</div>
+        </div>
+        <div class="flex flex-col">
+          <span class="text-on-surface font-semibold text-label-md">Moeketsi Fekefeke</span>
+          <span class="text-on-surface-variant text-label-sm">Super Administrator</span>
+        </div>
+        <span class="material-symbols-outlined ml-auto text-on-surface-variant" aria-hidden="true">more_vert</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================================================
+       SHARED TOP BAR (title/search change per section)
+       ============================================================ -->
+  <main class="ml-sidebar-width min-h-screen flex flex-col relative">
+    <header class="h-16 bg-surface border-b border-outline-variant flex items-center justify-between px-lg sticky top-0 z-40">
+      <div class="flex items-center gap-lg flex-1">
+        <h2 class="font-headline-md text-headline-md text-primary tracking-tight" id="page-title">Admin Dashboard</h2>
+        <div class="relative max-w-md w-full ml-4">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" aria-hidden="true">search</span>
+          <input class="w-full bg-surface-container-low border-none rounded-full py-2 pl-10 pr-4 text-body-md focus:ring-2 focus:ring-primary transition-all" id="global-search" placeholder="Search users, items, categories, or reports..." type="text" aria-label="Search">
+        </div>
+      </div>
+      <div class="flex items-center gap-4">
+        <button type="button" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors relative" aria-label="Notifications">
+          <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true">notifications</span>
+          <span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+        </button>
+        <button type="button" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors" aria-label="Help">
+          <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true">help</span>
+        </button>
+        <button type="button" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low transition-colors" aria-label="Applications">
+          <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true">apps</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-y-auto custom-scrollbar">
+
+      <!-- ============================================================
+           SECTION: DASHBOARD
+           ============================================================ -->
+      <section id="section-dashboard" class="app-section active p-lg space-y-gutter">
+        <div class="grid grid-cols-12 gap-gutter">
+          <!-- Item Hotspots Panel -->
+          <div class="col-span-12 lg:col-span-8 bg-white border border-outline-variant rounded-xl p-lg flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+              <div class="flex flex-col">
+                <h3 class="font-headline-sm text-headline-sm">ITEM HOTSPOTS</h3>
+                <p class="text-label-sm text-on-surface-variant">Active reporting density by location</p>
+              </div>
+              <div class="flex gap-4">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-on-tertiary-container"></span>
+                  <span class="text-label-md text-on-surface">Lost (86)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-secondary"></span>
+                  <span class="text-label-md text-on-surface">Found (132)</span>
+                </div>
+              </div>
+            </div>
+            <div class="relative flex-1 min-h-[300px] rounded-lg overflow-hidden border border-outline-variant bg-gradient-to-br from-surface-container-low to-surface-container flex items-center justify-center">
+              <div class="text-center text-on-surface-variant">
+                <span class="material-symbols-outlined text-5xl opacity-40" aria-hidden="true">map</span>
+                <p class="text-label-sm mt-2 opacity-60">Map visualization</p>
+              </div>
+              <div class="absolute bottom-4 right-4 flex flex-col gap-2">
+                <button type="button" class="w-8 h-8 bg-white shadow-sm border border-outline-variant rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors" aria-label="Zoom in">
+                  <span class="material-symbols-outlined text-on-surface" aria-hidden="true">add</span>
+                </button>
+                <button type="button" class="w-8 h-8 bg-white shadow-sm border border-outline-variant rounded-lg flex items-center justify-center hover:bg-surface-container transition-colors" aria-label="Zoom out">
+                  <span class="material-symbols-outlined text-on-surface" aria-hidden="true">remove</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- KPI Column -->
+          <div class="col-span-12 lg:col-span-4 flex flex-col gap-gutter">
+            <div class="kpi-card bg-white border border-outline-variant rounded-xl p-lg flex flex-col justify-between h-1/2">
+              <div class="flex justify-between items-start">
+                <span class="text-label-sm text-on-surface-variant font-bold tracking-wider uppercase">Recovery Rate</span>
+                <div class="px-2 py-1 bg-secondary-container text-on-secondary-container rounded-lg text-label-sm font-bold flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[14px]" aria-hidden="true">trending_up</span> +3.1%
+                </div>
+              </div>
+              <div class="mt-4 flex items-end justify-between">
+                <div class="text-display-lg font-display-lg tracking-tighter">76.4%</div>
+                <div class="flex items-end gap-1 h-12 pb-2">
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:40%"></div>
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:60%"></div>
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:45%"></div>
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:70%"></div>
+                  <div class="w-2 bg-secondary rounded-t-sm" style="height:90%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="kpi-card bg-white border border-outline-variant rounded-xl p-lg flex flex-col justify-between h-1/2">
+              <div class="flex justify-between items-start">
+                <span class="text-label-sm text-on-surface-variant font-bold tracking-wider uppercase">Avg. Recovery Time</span>
+                <div class="px-2 py-1 bg-tertiary-fixed text-on-tertiary-fixed-variant rounded-lg text-label-sm font-bold flex items-center gap-1">
+                  <span class="material-symbols-outlined text-[14px]" aria-hidden="true">trending_down</span> -8.5%
+                </div>
+              </div>
+              <div class="mt-4 flex items-end justify-between">
+                <div class="text-display-lg font-display-lg tracking-tighter">3.2 <span class="text-headline-sm font-headline-sm text-on-surface-variant">days</span></div>
+                <div class="flex items-end gap-1 h-12 pb-2">
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:80%"></div>
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:65%"></div>
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:75%"></div>
+                  <div class="w-2 bg-outline-variant rounded-t-sm" style="height:50%"></div>
+                  <div class="w-2 bg-on-tertiary-container rounded-t-sm" style="height:35%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pending Claims Table -->
+        <section class="bg-white border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+          <div class="px-lg py-4 border-b border-outline-variant flex justify-between items-center bg-surface-container-lowest">
+            <div class="flex items-center gap-6">
+              <h3 class="font-headline-sm text-headline-sm">Pending Claims</h3>
+              <div class="flex bg-surface-container-low p-1 rounded-lg">
+                <button type="button" class="px-4 py-1.5 rounded-md text-label-md font-semibold bg-white shadow-sm">All Claims</button>
+                <button type="button" class="px-4 py-1.5 rounded-md text-label-md text-on-surface-variant hover:bg-white/50 transition-colors">Pending</button>
+                <button type="button" class="px-4 py-1.5 rounded-md text-label-md text-on-surface-variant hover:bg-white/50 transition-colors">Approved</button>
+                <button type="button" class="px-4 py-1.5 rounded-md text-label-md text-on-surface-variant hover:bg-white/50 transition-colors">Rejected</button>
+              </div>
+            </div>
+            <button type="button" class="flex items-center gap-2 px-4 py-2 border border-outline-variant rounded-lg text-label-md hover:bg-surface-container-low transition-colors">
+              <span class="material-symbols-outlined text-[20px]" aria-hidden="true">filter_list</span> Filter
+            </button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left">
+              <thead>
+                <tr class="bg-surface-container-low border-b border-outline-variant">
+                  <th class="px-lg py-3 text-label-sm text-on-surface-variant font-bold uppercase tracking-wider">Item</th>
+                  <th class="px-lg py-3 text-label-sm text-on-surface-variant font-bold uppercase tracking-wider">Reported By</th>
+                  <th class="px-lg py-3 text-label-sm text-on-surface-variant font-bold uppercase tracking-wider">Status</th>
+                  <th class="px-lg py-3 text-label-sm text-on-surface-variant font-bold uppercase tracking-wider">Category</th>
+                  <th class="px-lg py-3 text-label-sm text-on-surface-variant font-bold uppercase tracking-wider text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant">
+                <tr class="table-row hover:bg-surface-container-lowest transition-colors">
+                  <td class="px-lg py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
+                        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true">backpack</span>
+                      </div>
+                      <span class="font-semibold text-body-md">Black Backpack</span>
+                    </div>
+                  </td>
+                  <td class="px-lg py-4 text-body-md">claimant</td>
+                  <td class="px-lg py-4">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-[var(--warning-bg)] text-[var(--warning-text)] rounded-full text-label-sm font-bold">
+                      <span class="w-1.5 h-1.5 rounded-full bg-[var(--warning-text)]"></span> Lost
+                    </span>
+                  </td>
+                  <td class="px-lg py-4 text-body-md text-on-surface-variant">Bags</td>
+                  <td class="px-lg py-4 text-right">
+                    <button type="button" class="bg-primary text-on-primary px-4 py-2 rounded-lg text-label-md font-bold hover:opacity-90 transition-opacity">Review Claim</button>
+                  </td>
+                </tr>
+                <tr class="table-row hover:bg-surface-container-lowest transition-colors">
+                  <td class="px-lg py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
+                        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true">smartphone</span>
+                      </div>
+                      <span class="font-semibold text-body-md">iPhone 14 Pro</span>
+                    </div>
+                  </td>
+                  <td class="px-lg py-4 text-body-md">claimant</td>
+                  <td class="px-lg py-4">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full text-label-sm font-bold">
+                      <span class="w-1.5 h-1.5 rounded-full bg-on-secondary-container"></span> Found
+                    </span>
+                  </td>
+                  <td class="px-lg py-4 text-body-md text-on-surface-variant">Electronics</td>
+                  <td class="px-lg py-4 text-right">
+                    <button type="button" class="bg-primary text-on-primary px-4 py-2 rounded-lg text-label-md font-bold hover:opacity-90 transition-opacity">Review Claim</button>
+                  </td>
+                </tr>
+                <tr class="table-row hover:bg-surface-container-lowest transition-colors">
+                  <td class="px-lg py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
+                        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true">watch</span>
+                      </div>
+                      <span class="font-semibold text-body-md">Silver Watch</span>
+                    </div>
+                  </td>
+                  <td class="px-lg py-4 text-body-md">claimant</td>
+                  <td class="px-lg py-4">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-container text-white rounded-full text-label-sm font-bold">
+                      <span class="w-1.5 h-1.5 rounded-full bg-white"></span> Matched
+                    </span>
+                  </td>
+                  <td class="px-lg py-4 text-body-md text-on-surface-variant">Jewelry</td>
+                  <td class="px-lg py-4 text-right">
+                    <button type="button" class="bg-primary text-on-primary px-4 py-2 rounded-lg text-label-md font-bold hover:opacity-90 transition-opacity">Review Claim</button>
+                  </td>
+                </tr>
+                <tr class="table-row hover:bg-surface-container-lowest transition-colors">
+                  <td class="px-lg py-4">
+                    <div class="flex items-center gap-3">
+                      <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center">
+                        <span class="material-symbols-outlined text-on-surface-variant" aria-hidden="true">badge</span>
+                      </div>
+                      <span class="font-semibold text-body-md">Student ID Card</span>
+                    </div>
+                  </td>
+                  <td class="px-lg py-4 text-body-md">claimant</td>
+                  <td class="px-lg py-4">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-surface-container text-on-surface-variant rounded-full text-label-sm font-bold">
+                      <span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant"></span> Claimed
+                    </span>
+                  </td>
+                  <td class="px-lg py-4 text-body-md text-on-surface-variant">Documents</td>
+                  <td class="px-lg py-4 text-right">
+                    <button type="button" class="bg-primary text-on-primary px-4 py-2 rounded-lg text-label-md font-bold hover:opacity-90 transition-opacity">Review Claim</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <footer class="px-lg py-4 bg-surface-container-low flex justify-between items-center border-t border-outline-variant">
+            <span class="text-label-md text-on-surface-variant">Showing 4 of 128 pending claims</span>
+            <div class="flex items-center gap-1">
+              <button type="button" class="w-8 h-8 rounded-md flex items-center justify-center bg-white border border-outline-variant text-primary font-bold shadow-sm" aria-label="Page 1">01</button>
+              <button type="button" class="w-8 h-8 rounded-md flex items-center justify-center hover:bg-white/50 text-on-surface-variant transition-colors" aria-label="Page 2">02</button>
+              <button type="button" class="w-8 h-8 rounded-md flex items-center justify-center hover:bg-white/50 text-on-surface-variant transition-colors" aria-label="Page 3">03</button>
+              <span class="mx-2 text-on-surface-variant" aria-hidden="true">...</span>
+              <button type="button" class="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-primary" aria-label="Next page">
+                <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+              </button>
+            </div>
+          </footer>
+        </section>
+      </section>
+
+      <!-- ============================================================
+           SECTION: MANAGE USERS
+           ============================================================ -->
+      <section id="section-users" class="app-section p-gutter space-y-lg">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="font-headline-lg text-headline-lg text-on-surface">Manage Users</h1>
+            <p class="text-on-surface-variant font-body-md">Oversee system access, roles, and administrative permissions.</p>
+          </div>
+          <button type="button" class="bg-[var(--primary)] hover:bg-black text-white px-lg py-md rounded-lg font-label-md text-label-md flex items-center gap-sm transition-transform active:scale-[0.98]">
+            <span class="material-symbols-outlined" aria-hidden="true">person_add</span> Add User
+          </button>
+        </div>
+
+        <div class="flex flex-col md:flex-row md:items-center gap-md">
+          <div class="flex bg-surface-container-low p-1 rounded-xl">
+            <button type="button" class="px-lg py-sm rounded-lg bg-white text-primary shadow-sm font-label-md text-label-md">All</button>
+            <button type="button" class="px-lg py-sm rounded-lg text-on-surface-variant hover:bg-white/50 transition-colors font-label-md text-label-md">Users</button>
+            <button type="button" class="px-lg py-sm rounded-lg text-on-surface-variant hover:bg-white/50 transition-colors font-label-md text-label-md">Officers</button>
+            <button type="button" class="px-lg py-sm rounded-lg text-on-surface-variant hover:bg-white/50 transition-colors font-label-md text-label-md">Administrators</button>
+          </div>
+          <div class="flex-1"></div>
+          <div class="flex items-center gap-sm">
+            <button type="button" class="flex items-center gap-sm px-md py-sm border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">
+              <span class="material-symbols-outlined text-sm" aria-hidden="true">filter_list</span> More Filters
+            </button>
+            <button type="button" class="flex items-center gap-sm px-md py-sm border border-outline-variant rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors text-error">
+              <span class="material-symbols-outlined text-sm" aria-hidden="true">restart_alt</span> Reset
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl border border-outline-variant overflow-hidden">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-surface-container-low border-b border-outline-variant">
+                <th class="px-lg py-md font-label-md text-label-md text-on-surface-variant font-bold uppercase tracking-wider">Name</th>
+                <th class="px-lg py-md font-label-md text-label-md text-on-surface-variant font-bold uppercase tracking-wider">Email</th>
+                <th class="px-lg py-md font-label-md text-label-md text-on-surface-variant font-bold uppercase tracking-wider">Role</th>
+                <th class="px-lg py-md font-label-md text-label-md text-on-surface-variant font-bold uppercase tracking-wider">Status</th>
+                <th class="px-lg py-md font-label-md text-label-md text-on-surface-variant font-bold uppercase tracking-wider">Date Joined</th>
+                <th class="px-lg py-md font-label-md text-label-md text-on-surface-variant font-bold uppercase tracking-wider text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-outline-variant font-body-md text-body-md" id="users-tbody">
+              <!-- rows injected by JS (see USERS_DATA) to avoid repeating markup -->
+            </tbody>
+          </table>
+          <div class="px-lg py-md flex items-center justify-between border-t border-outline-variant bg-surface-container-low">
+            <p class="font-label-md text-label-md text-on-surface-variant">Showing 5 of 42 users</p>
+            <div class="flex items-center gap-xs">
+              <button type="button" class="p-sm text-outline hover:text-primary disabled:opacity-30" disabled aria-label="Previous page">
+                <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+              </button>
+              <button type="button" class="w-8 h-8 flex items-center justify-center rounded-lg bg-primary text-white font-label-md text-label-md" aria-label="Page 1">01</button>
+              <button type="button" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant font-label-md text-label-md" aria-label="Page 2">02</button>
+              <button type="button" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant font-label-md text-label-md" aria-label="Page 3">03</button>
+              <span class="px-xs text-on-surface-variant" aria-hidden="true">...</span>
+              <button type="button" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container text-on-surface-variant font-label-md text-label-md" aria-label="Page 8">08</button>
+              <button type="button" class="p-sm text-outline hover:text-primary" aria-label="Next page">
+                <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-lg">
+          <div class="bg-white p-lg rounded-xl border border-outline-variant space-y-sm">
+            <span class="text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">Active Administrators</span>
+            <div class="flex items-end gap-sm">
+              <span class="text-3xl font-bold font-headline-md">12</span>
+              <span class="text-secondary font-label-sm text-label-sm pb-1 flex items-center"><span class="material-symbols-outlined text-sm" aria-hidden="true">arrow_upward</span> 2.5%</span>
+            </div>
+          </div>
+          <div class="bg-white p-lg rounded-xl border border-outline-variant space-y-sm">
+            <span class="text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">Pending Verifications</span>
+            <div class="flex items-end gap-sm">
+              <span class="text-3xl font-bold font-headline-md">07</span>
+              <span class="text-on-tertiary-container font-label-sm text-label-sm pb-1">Review needed</span>
+            </div>
+          </div>
+          <div class="bg-white p-lg rounded-xl border border-outline-variant space-y-sm">
+            <span class="text-on-surface-variant font-label-md text-label-md uppercase tracking-wider">Suspended Accounts</span>
+            <div class="flex items-end gap-sm">
+              <span class="text-3xl font-bold font-headline-md">03</span>
+              <span class="text-error font-label-sm text-label-sm pb-1 flex items-center"><span class="material-symbols-outlined text-sm" aria-hidden="true">arrow_downward</span> 1.2%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SECTION: MANAGE CATEGORIES
+           ============================================================ -->
+      <section id="section-categories" class="app-section p-lg">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-xl">
+          <div>
+            <h2 class="font-headline-lg text-headline-lg text-on-background">Manage Categories</h2>
+            <p class="text-on-surface-variant mt-1">Organize and structure items for efficient claim matching.</p>
+          </div>
+          <button type="button" class="inline-flex items-center gap-2 bg-[var(--primary)] text-white px-6 py-3 rounded-lg hover:bg-black transition-all active:scale-95 font-bold">
+            <span class="material-symbols-outlined text-[20px]" aria-hidden="true">add</span> Add Category
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-lg" id="categories-grid">
+          <!-- category cards injected by JS (see CATEGORY_DATA) to avoid repeating markup -->
+          <button type="button" class="border-2 border-dashed border-outline-variant p-lg rounded-xl flex flex-col items-center justify-center gap-md hover:border-primary hover:bg-white transition-all group min-h-[180px]">
+            <div class="w-12 h-12 rounded-full border border-outline-variant flex items-center justify-center text-on-surface-variant group-hover:text-primary group-hover:border-primary transition-colors">
+              <span class="material-symbols-outlined text-[32px]" aria-hidden="true">add</span>
+            </div>
+            <span class="font-label-md text-label-md text-on-surface-variant group-hover:text-primary">Create New Category</span>
+          </button>
+        </div>
+
+        <div class="mt-xl grid grid-cols-1 md:grid-cols-3 gap-lg">
+          <div class="bg-surface-container-low p-lg rounded-xl border border-outline-variant">
+            <p class="text-label-sm text-on-surface-variant uppercase tracking-wider">Total Active Categories</p>
+            <h4 class="text-headline-md font-bold mt-2">12 Types</h4>
+          </div>
+          <div class="bg-surface-container-low p-lg rounded-xl border border-outline-variant">
+            <p class="text-label-sm text-on-surface-variant uppercase tracking-wider">Most Active Category</p>
+            <h4 class="text-headline-md font-bold mt-2">Electronics</h4>
+            <p class="text-xs text-secondary font-bold mt-1">+12% this week</p>
+          </div>
+          <div class="bg-surface-container-low p-lg rounded-xl border border-outline-variant">
+            <p class="text-label-sm text-on-surface-variant uppercase tracking-wider">Empty Categories</p>
+            <h4 class="text-headline-md font-bold mt-2">0</h4>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SECTION: REPORTS (placeholder — no source markup was provided
+           for this page, so it reuses the shared TRACE layout)
+           ============================================================ -->
+      <section id="section-reports" class="app-section p-lg">
+        <div class="mb-xl">
+          <h2 class="font-headline-lg text-headline-lg text-on-background">Reports</h2>
+          <p class="text-on-surface-variant mt-1">Recovery performance and claim analytics.</p>
+        </div>
+        <div class="bg-white border border-outline-variant rounded-xl p-xl flex flex-col items-center justify-center text-center gap-md min-h-[300px]">
+          <span class="material-symbols-outlined text-5xl text-on-surface-variant opacity-40" aria-hidden="true">assessment</span>
+          <p class="text-on-surface-variant max-w-sm">Reports content wasn't included in the source files provided — this section is a placeholder using the shared TRACE layout, ready for real charts and tables.</p>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SECTION: SYSTEM SETTINGS
+           ============================================================ -->
+      <section id="section-settings" class="app-section p-lg pb-32">
+        <div class="mb-xl">
+          <h2 class="font-headline-lg text-headline-lg text-primary">System Settings</h2>
+          <p class="text-on-surface-variant font-body-md">Configure global platform parameters, matching logic, and access controls.</p>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-lg">
+          <div class="lg:col-span-7 space-y-lg">
+            <section class="bg-surface-container-lowest rounded-xl border border-outline-variant p-lg">
+              <div class="flex items-center gap-sm mb-lg">
+                <span class="material-symbols-outlined text-primary" aria-hidden="true">tune</span>
+                <h3 class="font-headline-sm text-headline-sm text-primary">General</h3>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-lg">
+                <div class="space-y-xs">
+                  <label class="font-label-md text-label-md text-on-surface-variant" for="platform-name">Platform Name</label>
+                  <input class="w-full border border-outline px-md py-sm rounded-lg font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" id="platform-name" type="text" value="TRACE">
+                </div>
+                <div class="space-y-xs">
+                  <label class="font-label-md text-label-md text-on-surface-variant" for="support-email">Support Email</label>
+                  <input class="w-full border border-outline px-md py-sm rounded-lg font-body-md focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all" id="support-email" type="email" value="support@trace-ops.com">
+                </div>
+              </div>
+            </section>
+
+            <section class="bg-surface-container-lowest rounded-xl border border-outline-variant p-lg">
+              <div class="flex items-center gap-sm mb-lg">
+                <span class="material-symbols-outlined text-primary" aria-hidden="true">notifications_active</span>
+                <h3 class="font-headline-sm text-headline-sm text-primary">Notifications</h3>
+              </div>
+              <div class="space-y-md" id="notification-toggles">
+                <!-- toggle rows injected by JS (see NOTIFICATION_DATA) to avoid repeating markup -->
+              </div>
+            </section>
+          </div>
+
+          <div class="lg:col-span-5">
+            <section class="bg-surface-container-lowest rounded-xl border border-outline-variant p-lg h-full">
+              <div class="flex items-center gap-sm mb-lg">
+                <span class="material-symbols-outlined text-primary" aria-hidden="true">analytics</span>
+                <h3 class="font-headline-sm text-headline-sm text-primary">Matching Algorithm</h3>
+              </div>
+              <div class="space-y-xl" id="matching-sliders">
+                <!-- slider rows injected by JS (see MATCHING_DATA) to avoid repeating markup -->
+                <div class="mt-xl p-md bg-secondary/5 rounded-lg border border-secondary/10">
+                  <div class="flex gap-sm">
+                    <span class="material-symbols-outlined text-secondary text-[20px]" aria-hidden="true">info</span>
+                    <p class="text-body-sm text-on-secondary-container">Adjusting these values will retroactively re-calculate confidence scores for all open claims.</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="lg:col-span-12">
+            <section class="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden">
+              <div class="p-lg border-b border-outline-variant flex items-center gap-sm">
+                <span class="material-symbols-outlined text-primary" aria-hidden="true">security</span>
+                <h3 class="font-headline-sm text-headline-sm text-primary">Roles &amp; Permissions</h3>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-surface-container-low">
+                      <th class="px-lg py-md font-label-md text-on-surface-variant border-b border-outline-variant">Role Name</th>
+                      <th class="px-lg py-md font-label-md text-on-surface-variant border-b border-outline-variant text-center">Manage Users</th>
+                      <th class="px-lg py-md font-label-md text-on-surface-variant border-b border-outline-variant text-center">Approve Claims</th>
+                      <th class="px-lg py-md font-label-md text-on-surface-variant border-b border-outline-variant text-center">Edit Categories</th>
+                      <th class="px-lg py-md font-label-md text-on-surface-variant border-b border-outline-variant">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-surface-container" id="roles-tbody">
+                    <!-- role rows injected by JS (see ROLES_DATA) to avoid repeating markup -->
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Fixed Save Footer (only relevant/visible on Settings) -->
+  <div class="fixed bottom-0 right-0 left-sidebar-width p-lg pointer-events-none z-50" id="save-footer" style="display:none;">
+    <div class="max-w-7xl mx-auto flex justify-end">
+      <button type="button" class="pointer-events-auto bg-[var(--primary)] text-white px-xl py-md rounded-full font-label-md text-label-md flex items-center gap-md shadow-lg hover:scale-105 active:scale-95 transition-all duration-300" id="save-btn">
+        <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;" aria-hidden="true">save</span>
+        Save Changes
+      </button>
+    </div>
+  </div>
+
+</body>
+</html>
