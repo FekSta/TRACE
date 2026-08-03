@@ -1,164 +1,281 @@
 # 🗄️ TRACE — Entity Relationship Diagram
 
-```mermaid
-erDiagram
-    %% ============================================================
-    %% CORE ENTITIES
-    %% ============================================================
 
-    User {
-        uuid id PK "Primary key"
-        string email "Unique, used for login"
-        string password_hash "bcrypt hash"
-        string full_name "Display name"
-        string phone "Optional contact"
-        enum role "user | officer | admin"
-        boolean is_active "Soft disable flag"
-        datetime created_at "Account creation timestamp"
-        datetime updated_at "Last profile update"
-    }
+# TRACE Core Business Layer & Supporting Layer Entities
 
-    Category {
-        uuid id PK "Primary key"
-        string name "e.g. Electronics, Clothing"
-        text description "Optional description"
-        datetime created_at "Creation timestamp"
-    }
+> **TRACE (Tracking, Recovery, And Claim Engine)**
+>
+> This document defines the persistent entities that make up the TRACE Lost & Found Management System. The entities are divided into **Core Business Layer** and **Supporting Layer** to clearly distinguish between the primary business data and the operational data that supports business processes.
 
-    Location {
-        uuid id PK "Primary key"
-        string name "e.g. Library, Student Center"
-        string building "Optional building name"
-        text description "Optional directions"
-        datetime created_at "Creation timestamp"
-    }
+---
 
-    %% ============================================================
-    %% ITEM ENTITIES
-    %% ============================================================
+# Core Business Layer
 
-    LostItem {
-        uuid id PK "Primary key"
-        uuid reporter_id FK "User who reported"
-        uuid category_id FK "Item category"
-        uuid location_id FK "Where it was lost"
-        string title "Short item description"
-        text description "Detailed description"
-        date date_lost "When it was lost"
-        string color "Item colour"
-        string brand "Item brand (optional)"
-        string keywords "Search keywords"
-        json image_urls "Array of image paths"
-        enum status "open | matched | claimed | closed"
-        datetime created_at "Report timestamp"
-        datetime updated_at "Last update"
-    }
+These entities represent the primary business objects that the system is designed to manage.
 
-    FoundItem {
-        uuid id PK "Primary key"
-        uuid reporter_id FK "User who found it"
-        uuid category_id FK "Item category"
-        uuid location_id FK "Where it was found"
-        string title "Short item description"
-        text description "Detailed description"
-        date date_found "When it was found"
-        string color "Item colour"
-        string brand "Item brand (optional)"
-        string storage_location "Where item is stored"
-        json image_urls "Array of image paths"
-        enum status "open | matched | claimed | returned"
-        datetime created_at "Report timestamp"
-        datetime updated_at "Last update"
-    }
+---
 
-    %% ============================================================
-    %% MATCHING & CLAIMS
-    %% ============================================================
+## 1. User
 
-    Match {
-        uuid id PK "Primary key"
-        uuid lost_item_id FK "Matched lost item"
-        uuid found_item_id FK "Matched found item"
-        float score "0.0 - 1.0 confidence score"
-        enum status "pending | approved | rejected"
-        datetime created_at "Match timestamp"
-    }
+**Purpose**
 
-    Claim {
-        uuid id PK "Primary key"
-        uuid lost_item_id FK "Lost item being claimed"
-        uuid match_id FK "Associated match record"
-        uuid claimant_id FK "User submitting claim"
-        uuid officer_id FK "Officer reviewing claim"
-        text description "Claim justification"
-        json evidence_urls "Proof documents/images"
-        enum status "pending | approved | rejected"
-        datetime submitted_at "Claim submission"
-        datetime reviewed_at "Officer review timestamp"
-        datetime created_at "Record creation"
-        datetime updated_at "Last update"
-    }
+Represents every person interacting with the system, including students, staff members, Lost & Found Officers, and Administrators.
 
-    %% ============================================================
-    %% NOTIFICATIONS & AUDIT
-    %% ============================================================
+| Attribute | Type | Description |
+|------------|------|-------------|
+| UserID (PK) | UUID / Integer | Unique user identifier |
+| FirstName | String | User's first name |
+| LastName | String | User's last name |
+| StudentNumber | String | Student or employee number |
+| Email | String | Login email address |
+| PhoneNumber | String | Contact number |
+| PasswordHash | String | Encrypted password |
+| Role | Enum | User, Officer, Administrator |
+| Status | Enum | Active, Suspended, Inactive |
+| CreatedAt | DateTime | Account creation timestamp |
 
-    Notification {
-        uuid id PK "Primary key"
-        uuid user_id FK "Recipient"
-        uuid reference_id "Related entity ID (polymorphic)"
-        string reference_type "Entity type: match, claim, item"
-        enum type "match_alert | claim_update | collection_reminder | system"
-        string title "Short notification title"
-        text message "Notification body"
-        boolean is_read "Read status"
-        datetime created_at "When notification was sent"
-    }
+---
 
-    AuditLog {
-        uuid id PK "Primary key"
-        uuid user_id FK "Who performed action"
-        uuid entity_id "Affected entity ID"
-        string entity_type "Entity class name"
-        string action "CREATE | UPDATE | DELETE | VERIFY | APPROVE | REJECT"
-        json changes "Before/after snapshot"
-        string ip_address "Request origin"
-        datetime created_at "When action occurred"
-    }
+## 2. LostItem
 
-    %% ============================================================
-    %% RELATIONSHIPS
-    %% ============================================================
+**Purpose**
 
-    %% User relationships
-    User ||--o{ LostItem : "reports"
-    User ||--o{ FoundItem : "registers"
-    User ||--o{ Claim : "submits as claimant"
-    User ||--o{ Claim : "reviews as officer"
-    User ||--o{ Notification : "receives"
-    User ||--o{ AuditLog : "performs"
+Stores reports of items that users have lost.
 
-    %% Category relationships
-    Category ||--o{ LostItem : "classifies"
-    Category ||--o{ FoundItem : "classifies"
+| Attribute | Type | Description |
+|------------|------|-------------|
+| LostItemID (PK) | UUID / Integer | Unique identifier |
+| UserID (FK) | Foreign Key | User who reported the item |
+| CategoryID (FK) | Foreign Key | Item category |
+| Title | String | Short item title |
+| Description | Text | Detailed description |
+| Brand | String | Item manufacturer or brand |
+| Colour | String | Item colour |
+| DateLost | Date | Date item was lost |
+| LocationLost | String | Last known location |
+| Status | Enum | Reported, Matched, Claimed, Closed |
 
-    %% Location relationships
-    Location ||--o{ LostItem : "lost at"
-    Location ||--o{ FoundItem : "found at"
+---
 
-    %% Item-to-Match relationships
-    LostItem ||--o{ Match : "matched with"
-    FoundItem ||--o{ Match : "matched against"
-    LostItem ||--o{ Claim : "claimed via"
+## 3. FoundItem
 
-    %% Match-to-Claim relationship
-    Match ||--o{ Claim : "triggers"
+**Purpose**
 
-    %% Notification references (polymorphic via reference_id)
-    Notification }o--|| Match : "notifies about match"
-    Notification }o--|| Claim : "notifies about claim"
-    Notification }o--|| LostItem : "notifies about item"
-```
+Stores reports of items that have been found.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| FoundItemID (PK) | UUID / Integer | Unique identifier |
+| UserID (FK) | Foreign Key | User who found the item |
+| CategoryID (FK) | Foreign Key | Item category |
+| Title | String | Short item title |
+| Description | Text | Detailed description |
+| Brand | String | Manufacturer or brand |
+| Colour | String | Item colour |
+| DateFound | Date | Date item was found |
+| StorageLocation | String | Where the item is stored |
+| Status | Enum | Available, Claimed, Returned |
+
+---
+
+## 4. Claim
+
+**Purpose**
+
+Represents ownership claims submitted by users for found items.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| ClaimID (PK) | UUID / Integer | Unique claim identifier |
+| LostItemID (FK) | Foreign Key | Related lost item |
+| FoundItemID (FK) | Foreign Key | Related found item |
+| UserID (FK) | Foreign Key | User submitting the claim |
+| ClaimDate | DateTime | Date submitted |
+| VerificationStatus | Enum | Pending, Approved, Rejected |
+| OfficerID (FK) | Foreign Key | Officer reviewing the claim |
+| VerificationNotes | Text | Officer remarks |
+| CollectionDate | DateTime | Date item collected |
+| Status | Enum | Active, Completed, Cancelled |
+
+---
+
+## 5. Category
+
+**Purpose**
+
+Defines the categories used to classify lost and found items.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| CategoryID (PK) | UUID / Integer | Unique category identifier |
+| CategoryName | String | Category name |
+| Description | String | Category description |
+| Icon | String | UI icon reference |
+| DisplayOrder | Integer | Display order |
+| Status | Enum | Active, Archived |
+| CreatedAt | DateTime | Date category created |
+
+---
+
+# Supporting Layer
+
+These entities support business workflows, automation, auditing, and system operations.
+
+---
+
+## 6. Match
+
+**Purpose**
+
+Stores potential matches generated automatically by the matching algorithm.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| MatchID (PK) | UUID / Integer | Match identifier |
+| LostItemID (FK) | Foreign Key | Lost item |
+| FoundItemID (FK) | Foreign Key | Found item |
+| MatchScore | Decimal | Confidence score |
+| MatchReason | Text | Reason for the suggested match |
+| Status | Enum | Suggested, Accepted, Rejected |
+| GeneratedAt | DateTime | Date generated |
+
+---
+
+## 7. Notification
+
+**Purpose**
+
+Stores notifications sent to users.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| NotificationID (PK) | UUID / Integer | Notification identifier |
+| UserID (FK) | Foreign Key | Recipient |
+| Title | String | Notification title |
+| Message | Text | Notification content |
+| NotificationType | Enum | Match, Claim, Reminder, System |
+| IsRead | Boolean | Read status |
+| CreatedAt | DateTime | Date created |
+
+---
+
+## 8. VerificationRecord
+
+**Purpose**
+
+Maintains records of the ownership verification process.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| VerificationID (PK) | UUID / Integer | Verification identifier |
+| ClaimID (FK) | Foreign Key | Related claim |
+| OfficerID (FK) | Foreign Key | Officer performing verification |
+| VerificationMethod | String | Verification method |
+| Result | Enum | Passed, Failed |
+| Notes | Text | Verification notes |
+| VerifiedAt | DateTime | Verification timestamp |
+
+---
+
+## 9. CollectionRecord
+
+**Purpose**
+
+Records successful collection of recovered items.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| CollectionID (PK) | UUID / Integer | Collection identifier |
+| ClaimID (FK) | Foreign Key | Related claim |
+| CollectedBy | String | Person collecting item |
+| OfficerID (FK) | Foreign Key | Officer releasing item |
+| CollectionDate | DateTime | Collection date |
+| RecipientSignature | String | Signature reference |
+| Remarks | Text | Additional notes |
+
+---
+
+## 10. Attachment
+
+**Purpose**
+
+Stores uploaded images and supporting documents.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| AttachmentID (PK) | UUID / Integer | Attachment identifier |
+| FileName | String | Original filename |
+| FilePath | String | Storage path |
+| FileType | String | Image, PDF, etc. |
+| UploadedBy (FK) | Foreign Key | User who uploaded the file |
+| UploadedAt | DateTime | Upload timestamp |
+| RelatedEntity | Enum | LostItem, FoundItem, Claim |
+
+---
+
+## 11. AuditLog
+
+**Purpose**
+
+Maintains a complete audit trail of significant system events.
+
+| Attribute | Type | Description |
+|------------|------|-------------|
+| AuditID (PK) | UUID / Integer | Audit identifier |
+| UserID (FK) | Foreign Key | User performing the action |
+| Action | String | Create, Update, Delete, Login, etc. |
+| EntityName | String | Entity affected |
+| EntityID | UUID / Integer | Affected record identifier |
+| Timestamp | DateTime | Date and time of action |
+| IPAddress | String | Originating IP address |
+
+---
+
+# Entity Summary
+
+## Core Business Layer
+
+| Entity | Purpose |
+|---------|---------|
+| User | System users |
+| LostItem | Lost item reports |
+| FoundItem | Found item reports |
+| Claim | Ownership claims |
+| Category | Item classification |
+
+---
+
+## Supporting Layer
+
+| Entity | Purpose |
+|---------|---------|
+| Match | Automatic item matching |
+| Notification | User notifications |
+| VerificationRecord | Ownership verification |
+| CollectionRecord | Item collection |
+| Attachment | Images and documents |
+| AuditLog | System audit trail |
+
+---
+
+# Overall Statistics
+
+| Layer | Number of Entities |
+|--------|-------------------:|
+| Core Business Layer | 5 |
+| Supporting Layer | 6 |
+| **Total Persistent Entities** | **11** |
+
+---
+
+# Notes
+
+- All entities are persistent and stored in the PostgreSQL database.
+- Each entity supports CRUD operations where appropriate.
+- The Core Business Layer models the primary business domain of the Lost & Found Management System.
+- The Supporting Layer enables automation, security, workflow management, notifications, auditing, and traceability.
+- This structure exceeds the minimum CMPG213/CMPG223 requirement of four entities while maintaining a clean and scalable architecture.
+
 
 ## Entity Summary
 
