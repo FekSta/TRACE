@@ -18,6 +18,7 @@ from app.modules.auth.schemas import (
     TokenResponse,
     UserResponse,
 )
+from app.modules.auth.deps import require_role
 from app.modules.auth.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -76,3 +77,15 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
             detail="Account is not active",
         )
     return TokenResponse(access_token=create_access_token(user), token_type="bearer")
+
+
+@router.get(
+    "/test-protected",
+    summary="THROWAWAY: admin-only test route proving 401/403 (remove later)",
+)
+def test_protected(
+    current_user: User = Depends(require_role(UserRole.ADMINISTRATOR)),
+) -> dict:
+    """Proves the dependency stack: no token -> 401, wrong role -> 403,
+    Administrator -> 200. Throwaway route; remove in a later milestone."""
+    return {"message": "Administrator access granted", "user": current_user.email}
