@@ -137,3 +137,35 @@ a silent guess.
 - **`Role` claim can go stale**; backend ignores it for authorization (DB role is authoritative) — the frontend should treat it as a hint, not a grant.
 - **The Items module exists only as a stub** (`GET /items/lost`) to prove `require_role`; Module 3 replaces it with real CRUD.
 - **Post-review hardening (fix branch `fix/auth-hardening`)**: a non-numeric `UserID` claim in a signed token now yields 401 (was an unhandled `ValueError` → 500), and passwords are truncated to bcrypt's 72-byte limit consistently in hash/verify (was a 500 on register with multibyte passwords).
+
+---
+
+## Module 3 — Item Management (decided 2026-08-12)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Scoping = role branch inside each endpoint** (one route per operation, not a separate route tree per role) | The issue explicitly prefers this when there's no strong reason to split. The owner-check helper `get_scoped()` centralizes the rule: staff see all, Users see own, cross-user → 404 (not 403, so row existence isn't leaked). |
+| 2 | **Category mutations are Administrator-only**; listing is open to any authenticated role | `data-flow.md` puts "Maintain Categories" under Administrator, but Users must read categories to report items. `include_archived=true` is Administrator-only (403 otherwise). |
+| 3 | **`DELETE /categories/{id}` archives (Status → `Archived`), never hard-deletes** | `Entities.md` gives `Category.Status` an `Archived` value, and items hold FKs to categories — a hard delete would either fail or orphan rows. Justified here per the guardrail; a hard-delete endpoint can be added later if needed. |
+| 4 | **Item updates use PATCH (partial, all fields optional, `status` included)** | Status-only changes (Officer verification) are the main update use case; a full-replace PUT would force clients to resend everything. |
+| 5 | **`LocalDiskStorage`: files stored as `<uuid4-hex>_<basename>` under `backend/uploads/`** | UUID prefix solves filename collisions and doubles as access control for the public `/media` route. `UPLOAD_DIR` env var overrides the root (default resolved to `backend/uploads/` regardless of CWD). |
+| 6 | **`/media/{filename}` is public in Phase 1, with server-side path-traversal blocking** | Attachment URLs must be fetchable from the browser without extra plumbing; unguessable UUID names are the Phase-1 authorization. Phase 2's `SupabaseStorage.get_url` will return provider URLs instead — the interface absorbs the change. |
+| 7 | **`Attachment` gained a nullable polymorphic `entity_id` column (Alembic `60ec8bad202b`)** | `Entities.md` lists `RelatedEntity` but no reference column, so an attachment couldn't actually link to its item. This was pre-flagged in Milestone 1's Review as the Module 3 resolution; `entity_id` is Integer (no FK — the `RelatedEntity` enum names the target table). Documented as an interpretation, not a silent guess. |
+| 8 | **`python-multipart` added** | FastAPI requires it for `UploadFile` multipart parsing; the app refused to boot without it (verified at runtime). |
+
+### Deviations
+
+- **`Attachment.entity_id`** — the only schema change from `Entities.md`; see decision 7. `Notes.md` §4.10 and §9.7 document it.
+- Everything else matches `Entities.md` and the `TRACE_Issues.md` Module 3 task list exactly (statuses start at `Reported`/`Available`; no extra endpoints; no pre-built matching hooks).
+- `python-multipart` is a dependency addition required by the chosen stack, not a scope change.
+
+### Known gaps / risks into Module 4
+
+- **No file-type/size validation on uploads** — anything is stored as-is; add size/MIME checks before the demo kit (Module 8).
+- **No orphaned-Attachment cleanup** — deleting an item leaves its attachment files and rows behind (the attachment's `entity_id` now makes them findable; a cleanup job is future work).
+- **Category delete is archive-only** — there is no hard-delete path; if the course brief demands literal deletion, revisit.
+- **Status transitions are unenforced** (any enum value via PATCH) until Matching (Module 4) and Claims (Module 5) add the real state machine.
+- **Public `/media`** — acceptable for Phase 1 (UUID names), but the demo/Phase-2 story should consider signed URLs or auth on media.
+- **`trace_uploads` volume is declared but unmounted** until the backend container lands in Module 8; LocalDiskStorage writes to the host `backend/uploads/` meanwhile.

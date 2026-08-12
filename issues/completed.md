@@ -124,3 +124,44 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 
 **Commits:**
 - `feat: add require_role dependency and protect items stub route`
+
+---
+
+## [Module 3] Category + LostItem/FoundItem CRUD
+
+**Closed:** 2026-08-12
+**Branch:** `feature/category-lostitem-founditem-crud`
+**Definition of done met:** curl created, listed, updated, and deleted Category, LostItem, and FoundItem against the live backend. Scoping enforced on every endpoint: UserA could not GET/PATCH/DELETE UserB's items (all 404), Users list only their own rows, Officer lists all rows unscoped and can update any item's status; Category mutations 403 for non-Administrators; new LostItems start at `Reported`, FoundItems at `Available`; invalid/inactive category → 400; no token → 401.
+
+**Files committed:**
+- `backend/app/modules/items/schemas.py`
+- `backend/app/modules/items/service.py` (scoping helpers)
+- `backend/app/modules/items/categories.py`
+- `backend/app/modules/items/lost_found.py`
+- `backend/app/modules/items/router.py` (aggregate)
+- `backend/app/modules/items/__init__.py`
+
+**Commits:**
+- `feat: add Category, LostItem and FoundItem CRUD with role-based scoping`
+
+---
+
+## [Module 3] `StorageBackend` interface + `LocalDiskStorage` implementation
+
+**Closed:** 2026-08-12
+**Branch:** `feature/storage-backend-local-disk`
+**Definition of done met:** uploading a file via `POST /items/lost/{id}/attachments` returned 201 with an `Attachment` row whose `file_path` is a working URL; `GET /media/<uuid>_<name>` fetched the file back with identical content; unknown-file and path-traversal requests → 404; `grep` confirmed zero filesystem I/O outside `storage.py` (all writes go through `storage.save(...)`); cross-user upload → 404, officer upload → 201, no token → 401.
+
+**Files committed:**
+- `backend/app/modules/items/storage.py` (`StorageBackend`, `LocalDiskStorage`, singleton)
+- `backend/app/modules/items/uploads.py` (upload routes + `/media/{filename}`)
+- `backend/app/models/attachment.py` (+`entity_id`, interpretation of `Entities.md` — see `Review.md`)
+- `backend/alembic/versions/60ec8bad202b_add_attachment_entity_id.py`
+- `backend/app/modules/items/router.py`, `backend/app/config.py` (`UPLOAD_DIR`)
+- `backend/requirements.txt` (`python-multipart`)
+- `docker-compose.yml` (`trace_uploads` volume), `backend/uploads/.gitkeep`, `.env.example`
+
+**Commits:**
+- `feat: add StorageBackend interface and LocalDiskStorage`
+- `feat: add Attachment entity_id column with migration`
+- `chore: add uploads volume to docker-compose.yml`

@@ -565,12 +565,178 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## 9. Module status
+## 9. Item Management API (Module 3)
+
+The Items module (`backend/app/modules/items/`) manages Categories, LostItems,
+FoundItems, and Attachments, with role-based scoping and a storage abstraction.
+
+### 9.1 Scoping rules (read this before touching scoping)
+
+- **User** — sees and modifies **only their own** LostItems/FoundItems
+  (`WHERE UserID = ?`). Accessing another user's row returns **404** (never
+  403), so the API does not reveal whether another user's row exists.
+- **Officer / Administrator** — see and may modify **all** items, unscoped.
+- **Categories** — viewable by everyone (needed for the reporting forms);
+  create/update/delete are **Administrator-only**. Archived categories are
+  hidden unless the caller is an Administrator requesting
+  `?include_archived=true`.
+- Scoping is a role branch **inside each endpoint** (one route serves both
+  scopes); there is no separate route tree per role.
+- Attachments: uploading to an item follows the same scoping (owner, or
+  Officer/Admin for any item).
+
+### 9.2 Endpoint summary
+
+| Method | Path | Auth required | Purpose |
+|---|---|---|---|
+| `GET` | `/categories` | Bearer (any role) | List active categories (`?include_archived=true` for Admin) |
+| `POST` | `/categories` | Bearer, `Administrator` | Add a category |
+| `PATCH` | `/categories/{id}` | Bearer, `Administrator` | Update a category |
+| `DELETE` | `/categories/{id}` | Bearer, `Administrator` | **Archive** a category (soft delete) |
+| `POST` | `/items/lost` | Bearer (any role) | Report a lost item (status `Reported`) |
+| `GET` | `/items/lost` | Bearer | List lost items (own for User; all for Officer/Admin) |
+| `GET` | `/items/lost/{id}` | Bearer | Get one (404 for cross-user access) |
+| `PATCH` | `/items/lost/{id}` | Bearer | Update (owner, or Officer/Admin for any) |
+| `DELETE` | `/items/lost/{id}` | Bearer | Delete (owner, or Officer/Admin for any) |
+| `POST` | `/items/found` | Bearer (any role) | Register a found item (status `Available`) |
+| `GET` | `/items/found` | Bearer | List found items (scoped like lost) |
+| `GET` | `/items/found/{id}` | Bearer | Get one (scoped) |
+| `PATCH` | `/items/found/{id}` | Bearer | Update (scoped) |
+| `DELETE` | `/items/found/{id}` | Bearer | Delete (scoped) |
+| `POST` | `/items/lost/{id}/attachments` | Bearer | Upload an attachment for a lost item |
+| `POST` | `/items/found/{id}/attachments` | Bearer | Upload an attachment for a found item |
+| `GET` | `/media/{filename}` | **none** (public) | Serve a stored file (UUID-prefixed names) |
+
+### 9.3 Category endpoints
+
+**Create (Admin)** — `POST /categories`
+
+```bash
+curl -X POST http://localhost:8000/categories \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"category_name":"Sports Gear","description":"Sporting equipment","icon":"sports","display_order":5}'
+```
+
+`201` → `{"id":5,"category_name":"Sports Gear","description":"Sporting equipment","icon":"sports","display_order":5,"status":"Active","created_at":"..."}`
+
+Errors: `403` (non-Admin), `409` (duplicate name), `422` (validation).
+
+**List** — `GET /categories` (any role) returns active categories ordered by
+`display_order`; Admin adds `?include_archived=true` to see archived ones.
+
+**Update (Admin)** — `PATCH /categories/{id}` (partial; all fields optional,
+including `status` so an Admin can restore an archived category).
+
+**Archive (Admin)** — `DELETE /categories/{id}` sets `Status` to `Archived`
+(soft delete — the row stays for FK integrity and history).
+
+### 9.4 LostItem endpoints
+
+**Report a lost item** — `POST /items/lost` (any authenticated role; the
+caller becomes the owner). New items start at `Reported`.
+
+```bash
+curl -X POST http://localhost:8000/items/lost \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Black backpack","brand":"Nike","colour":"Black","date_lost":"2026-08-10","location_lost":"Library"}'
+```
+
+`201` → `{"id":1,"user_id":1,"category_id":1,"title":"Black backpack",...,"status":"Reported"}`
+
+Errors: `400` (unknown/inactive category), `422` (validation), `401` (no token).
+
+**List** — `GET /items/lost`
+
+```bash
+# User token — own items only
+curl -H "Authorization: Bearer $USER_TOKEN" http://localhost:8000/items/lost
+# Officer token — all items
+curl -H "Authorization: Bearer $OFFICER_TOKEN" http://localhost:8000/items/lost
+```
+
+**Get / Update / Delete** — `GET|PATCH|DELETE /items/lost/{id}`. PATCH is
+partial (any field optional, including `status`); DELETE returns `204`.
+Cross-user access returns `404`.
+
+### 9.5 FoundItem endpoints
+
+Identical to LostItem under `/items/found`, except fields `date_found` and
+`storage_location`, and new items start at `Available`.
+
+### 9.6 Status transitions (this stage)
+
+| Entity | Enum (from `Entities.md`) | Starts at | Set by |
+|---|---|---|---|
+| LostItem | `Reported`, `Matched`, `Claimed`, `Closed` | `Reported` | creation; PATCH may set any valid value for now |
+| FoundItem | `Available`, `Claimed`, `Returned` | `Available` | creation; PATCH may set any valid value for now |
+
+Real transition rules arrive with Matching (Module 4: `Reported`→`Matched`)
+and Claims (Module 5: `Matched`→`Claimed`, `Available`→`Claimed`,
+`Claimed`→`Closed`/`Returned`). Until then the API accepts any enum value on
+PATCH so Officers can drive verification.
+
+### 9.7 Storage & attachments
+
+- Interface: `StorageBackend` (`save(content, original_filename) -> stored_name`,
+  `get_url(stored_name) -> url`, `delete(stored_name)`) in
+  `backend/app/modules/items/storage.py`.
+- Phase 1 implementation: `LocalDiskStorage` writes to `backend/uploads/`
+  (`UPLOAD_DIR` env var), storing files as `<uuid4-hex>_<original-name>` so
+  names never collide and are unguessable. Module 9 adds `SupabaseStorage`
+  behind the same interface — no Items-module code changes.
+- Attachments: `POST /items/lost/{id}/attachments` (or `/items/found/{id}/...`)
+  with a multipart `file` field. The `Attachment` row stores **only the URL**
+  (`file_path`), never bytes; `related_entity` is inferred from the route and
+  `entity_id` links the row to the item (see `Review.md` §Module 3).
+- Serving: `GET /media/{filename}` is **public** in Phase 1; the UUID prefix
+  is the access control, and path traversal is blocked server-side.
+
+```bash
+# upload (multipart)
+curl -X POST http://localhost:8000/items/lost/3/attachments \
+  -H "Authorization: Bearer $TOKEN" -F 'file=@/tmp/photo.jpg;type=image/jpeg'
+# -> 201 {"id":1,"file_name":"photo.jpg","file_path":"/media/<uuid>_photo.jpg",...}
+
+# fetch it back by URL
+curl http://localhost:8000/media/<uuid>_photo.jpg -o photo.jpg
+```
+
+### 9.8 Quick end-to-end test sequence
+
+```bash
+# login as User and Officer (tokens from §8)
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# 1. create a lost item (starts at Reported)
+ITEM=$(curl -s -X POST http://localhost:8000/items/lost \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Silver laptop"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+
+# 2. upload an attachment for it and fetch the file back by URL
+ATT=$(curl -s -X POST http://localhost:8000/items/lost/$ITEM/attachments \
+  -H "Authorization: Bearer $TOKEN" -F 'file=@/tmp/photo.txt' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["file_path"])')
+curl -s http://localhost:8000$ATT
+
+# 3. Officer logs in and sees ALL lost items (unscoped)
+OTOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"officer@example.com","password":"TestPass123!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl -s -H "Authorization: Bearer $OTOKEN" http://localhost:8000/items/lost
+
+# expected: the User sees only their own items; the Officer sees all
+```
+
+## 10. Module status
 
 | Milestone | Status |
 |-----------|--------|
 | Module 0 — Orientation | ✅ closed (see `issues/completed.md`) |
 | Module 1 — Local Postgres & schema | ✅ closed (see `issues/completed.md`) |
 | Module 2 — Authentication | ✅ closed (see `issues/completed.md`) |
-| Modules 3–8 | not started (per scope) |
+| Module 3 — Item Management | ✅ closed (see `issues/completed.md`) |
+| Modules 4–8 | not started (per scope) |
 | Module 9 — Cloud migration (optional) | not started |
