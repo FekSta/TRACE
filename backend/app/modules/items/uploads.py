@@ -24,7 +24,7 @@ from app.models.enums import RelatedEntity
 from app.modules.auth.deps import get_current_user
 from app.modules.items.schemas import AttachmentResponse
 from app.modules.items.service import get_scoped
-from app.modules.items.storage import storage
+from app.modules.items.storage import LocalDiskStorage, storage
 
 router = APIRouter(tags=["items"])
 
@@ -92,8 +92,17 @@ async def upload_found_item_attachment(
 def serve_media(filename: str) -> FileResponse:
     """Serve a stored file. Public in Phase 1; UUID-prefixed names prevent
     enumeration. Path traversal is blocked: the resolved file must sit
-    directly inside the uploads directory."""
-    root = storage.base_dir.resolve()  # type: ignore[attr-defined]
+    directly inside the uploads directory.
+
+    Serving local files is LocalDiskStorage behavior; Phase 2's
+    SupabaseStorage URLs point at the provider instead and never hit this
+    route."""
+    if not isinstance(storage, LocalDiskStorage):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Media serving requires the local storage backend",
+        )
+    root = storage.base_dir.resolve()
     path = (root / filename).resolve()
     if path.parent != root or not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")

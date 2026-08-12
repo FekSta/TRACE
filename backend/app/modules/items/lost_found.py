@@ -93,6 +93,8 @@ def update_lost_item(
     """Update a lost item (owner, or Officer/Admin for any item)."""
     item = get_scoped(db, LostItem, item_id, current_user)
     data = body.model_dump(exclude_unset=True)
+    # Explicit nulls are never applied (NOT NULL columns must not receive null).
+    data = {k: v for k, v in data.items() if v is not None}
     if "category_id" in data:
         ensure_active_category(db, data["category_id"])
     for field, value in data.items():
@@ -171,6 +173,8 @@ def update_found_item(
     """Update a found item (owner, or Officer/Admin for any item)."""
     item = get_scoped(db, FoundItem, item_id, current_user)
     data = body.model_dump(exclude_unset=True)
+    # Explicit nulls are never applied (NOT NULL columns must not receive null).
+    data = {k: v for k, v in data.items() if v is not None}
     if "category_id" in data:
         ensure_active_category(db, data["category_id"])
     for field, value in data.items():

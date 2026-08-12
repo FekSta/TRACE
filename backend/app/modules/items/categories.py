@@ -85,6 +85,9 @@ def update_category(
             status_code=status.HTTP_404_NOT_FOUND, detail="Category not found"
         )
     data = body.model_dump(exclude_unset=True)
+    # Explicit nulls are never applied: setting a NOT NULL column to null would
+    # 500 at commit. Trade-off (V1): optional fields can't be cleared via PATCH.
+    data = {k: v for k, v in data.items() if v is not None}
     new_name = (data.get("category_name") or "").strip()
     if new_name and new_name != category.category_name:
         if (

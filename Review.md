@@ -169,3 +169,4 @@ a silent guess.
 - **Status transitions are unenforced** (any enum value via PATCH) until Matching (Module 4) and Claims (Module 5) add the real state machine.
 - **Public `/media`** — acceptable for Phase 1 (UUID names), but the demo/Phase-2 story should consider signed URLs or auth on media.
 - **`trace_uploads` volume is declared but unmounted** until the backend container lands in Module 8; LocalDiskStorage writes to the host `backend/uploads/` meanwhile.
+- **Post-review hardening (fix branch `fix/items-patch-null`)**: PATCH updates now ignore explicit `null` values (previously an explicit null on a NOT NULL column — e.g. `{"title": null}` — caused an unhandled `IntegrityError` → 500). Trade-off: optional fields can't be cleared via PATCH in V1. The `/media` route also now guards `isinstance(storage, LocalDiskStorage)` instead of a `type: ignore`, making its Phase-1-only nature explicit.
