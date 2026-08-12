@@ -1,7 +1,18 @@
 # TRACE backend — Phase 1 (local) dependencies
 # Milestone 1: ORM models, migrations, and seed scripts.
-# Exact installed versions are recorded in Review.md §2.
+# Milestone 2: FastAPI app + Authentication module.
+# Exact installed versions are recorded in Review.md.
 
 SQLAlchemy>=2.0.30
 alembic>=1.13.0
 psycopg[binary]>=3.1.0
+
+# Module 2 — FastAPI application + Authentication
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pyjwt>=2.8
+# bcrypt directly (not passlib): passlib 1.7.4 is unmaintained and breaks with
+# bcrypt 5.x on Python 3.14 — see Review.md §Module 2.
+bcrypt>=4.1
+python-dotenv>=1.0
+email-validator>=2.0
