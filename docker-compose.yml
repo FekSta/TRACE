@@ -34,3 +34,7 @@ services:
 
 volumes:
   trace_pgdata:
+  # Declared in Module 3 (Item Management storage). The backend service
+  # (Module 8) mounts this for the uploads volume; meanwhile
+  # LocalDiskStorage writes to backend/uploads/ on the host.
+  trace_uploads:
