@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Identity, String, func
+from sqlalchemy import DateTime, ForeignKey, Identity, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -25,6 +25,10 @@ class Attachment(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     related_entity: Mapped[RelatedEntity] = mapped_column(RelatedEntityType)
+    # Polymorphic link to the related row (LostItem/FoundItem/Claim id).
+    # `Entities.md` lists RelatedEntity but no reference column — this is the
+    # resolution agreed in Milestone 1 and recorded in Review.md §Module 3.
+    entity_id: Mapped[int | None] = mapped_column(Integer)
 
     # Relationship.
     uploader: Mapped[User] = relationship(back_populates="attachments")
