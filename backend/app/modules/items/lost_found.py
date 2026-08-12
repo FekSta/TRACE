@@ -11,7 +11,7 @@ valid enum value for now; the matching/claims milestones will introduce real
 transition rules.
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,12 @@ from app.db import get_db
 from app.models import FoundItem, LostItem, User
 from app.models.enums import FoundItemStatus, LostItemStatus
 from app.modules.auth.deps import get_current_user
+# Module 4: matching runs in a BackgroundTask after the response is sent, so
+# item creation never blocks on the scoring pass (see matching/service.py).
+from app.modules.matching.service import (
+    run_matching_for_found_item,
+    run_matching_for_lost_item,
+)
 from app.modules.items.schemas import (
     FoundItemCreate,
     FoundItemResponse,
@@ -45,10 +51,15 @@ router = APIRouter(tags=["items"])
 )
 def create_lost_item(
     body: LostItemCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> LostItem:
-    """Report a lost item (any authenticated role; owner is the caller)."""
+    """Report a lost item (any authenticated role; owner is the caller).
+
+    Matching against `Available` FoundItems runs in a BackgroundTask *after*
+    this response is sent (Module 4) — creation never blocks on scoring.
+    """
     ensure_active_category(db, body.category_id)
     item = LostItem(
         user_id=current_user.id,
@@ -58,6 +69,7 @@ def create_lost_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    background_tasks.add_task(run_matching_for_lost_item, item.id)
     return item
 
 
@@ -125,10 +137,15 @@ def delete_lost_item(
 )
 def create_found_item(
     body: FoundItemCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> FoundItem:
-    """Register a found item (any authenticated role; owner is the caller)."""
+    """Register a found item (any authenticated role; owner is the caller).
+
+    Matching against `Reported` LostItems runs in a BackgroundTask *after*
+    this response is sent (Module 4) — creation never blocks on scoring.
+    """
     ensure_active_category(db, body.category_id)
     item = FoundItem(
         user_id=current_user.id,
@@ -138,6 +155,7 @@ def create_found_item(
     db.add(item)
     db.commit()
     db.refresh(item)
+    background_tasks.add_task(run_matching_for_found_item, item.id)
     return item
 
 
