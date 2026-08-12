@@ -1,24 +1,14 @@
-"""Items module router — Module 3 stub (Module 2, issue 2).
+"""Items module router aggregate — exposes Category and Lost/Found CRUD.
 
-This single protected route exists ONLY to prove that the Auth module's
-``require_role`` dependency works outside the Auth module. Item Management
-itself (Category/LostItem/FoundItem CRUD) is Module 3 and will replace this
-stub.
+Module 3 scope: Item Management only. Matching (Module 4), Claims (Module 5),
+and Notifications (Module 6) are separate modules.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from app.models import User
-from app.modules.auth.deps import require_role
+from app.modules.items.categories import router as categories_router
+from app.modules.items.lost_found import router as lost_found_router
 
-router = APIRouter(prefix="/items", tags=["items"])
-
-
-@router.get(
-    "/lost",
-    summary="Stub: list lost items (replaced by real CRUD in Module 3)",
-)
-def list_lost_items_stub(
-    current_user: User = Depends(require_role("User", "Officer", "Administrator")),
-) -> dict:
-    return {"items": [], "stub": True, "requested_by": current_user.email}
+router = APIRouter()
+router.include_router(categories_router)
+router.include_router(lost_found_router)
