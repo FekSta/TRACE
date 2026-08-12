@@ -13,6 +13,7 @@ from fastapi import FastAPI
 
 from app.modules.auth.router import router as auth_router
 from app.modules.items.router import router as items_router
+from app.modules.matching.router import router as matching_router
 
 app = FastAPI(
     title="TRACE API",
@@ -25,6 +26,7 @@ app = FastAPI(
 
 app.include_router(auth_router)
 app.include_router(items_router)
+app.include_router(matching_router)
 
 
 @app.get("/health", tags=["system"], summary="Liveness probe")
