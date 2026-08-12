@@ -170,3 +170,33 @@ a silent guess.
 - **Public `/media`** — acceptable for Phase 1 (UUID names), but the demo/Phase-2 story should consider signed URLs or auth on media.
 - **`trace_uploads` volume is declared but unmounted** until the backend container lands in Module 8; LocalDiskStorage writes to the host `backend/uploads/` meanwhile.
 - **Post-review hardening (fix branch `fix/items-patch-null`)**: PATCH updates now ignore explicit `null` values (previously an explicit null on a NOT NULL column — e.g. `{"title": null}` — caused an unhandled `IntegrityError` → 500). Trade-off: optional fields can't be cleared via PATCH in V1. The `/media` route also now guards `isinstance(storage, LocalDiskStorage)` instead of a `type: ignore`, making its Phase-1-only nature explicit.
+
+## Module 4 — Matching Engine (decided 2026-08-12)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Weights: Category 40 (hard gate), Location 15, Date 15, Description 30 (max 100)** | Per `ABOUT.md`'s single matching engine constraint, exactly those four factors. Category is the strongest signal and a **hard gate** — a cross-category suggestion is noise on a campus (a lost phone should never match a found jacket); everything below it is weighted by how discriminating it is: description next, then location and date. Edge case by design: *different category with everything else identical → score 0.00*, which is the right behaviour for V1. |
+| 2 | **Location similarity = token-set Jaccard** (`location_lost` vs the FoundItem's `storage_location`) | Small-campus locations are short phrases ("Sports Centre" vs "Sports Hall") — token Jaccard handles them without a geocoder (which would be an external service, forbidden). The FoundItem side uses `storage_location` because `Entities.md`'s FoundItem has no "found at" field — an interpretation worth revisiting if the demo expects location-of-discovery matching. |
+| 3 | **Date proximity = linear decay to 0 at ±14 days** | A 14-day window reflects how long lost/found reports stay relevant on campus; linear decay is simple, deterministic, and easy to tune. No date on either side = neutral (0), never a penalty. |
+| 4 | **Description similarity = stopword-stripped token Jaccard, no external library** | `ABOUT.md` forbids LLM/network calls for matching. A built-in ~12-word stopword list is enough at this scale; a proper NLP library (e.g. rapidfuzz) is a candidate if demo scoring feels off. |
+| 5 | **`MATCH_THRESHOLD = 60.00`** | With category gated at 40, reaching 60 needs real additional signal (e.g. same category + strong description overlap alone; or same category + close dates + partial description). If the demo shows false positives, raise toward 70; false negatives, lower toward 50 — the constant lives in `similarity.py` with the rest of the formula. |
+| 6 | **Matching runs as a `FastAPI BackgroundTask` after the creation response — no message queue** | `ABOUT.md` mandates in-process calls, and a campus pilot does not need durability/backpressure. Verified empirically: a FoundItem creation that produced a 100.00 match returned in **~106 ms** and the `Match` row was queryable immediately after. |
+| 7 | **`Match` writes are de-duplicated per (lost, found) pair** | The model already has `uq_matches_lost_item_found_item`; the runner checks for an existing row before inserting so a re-trigger (or a future "score an item" endpoint) can't create duplicates. |
+| 8 | **Scoring runs one-way on creation**: new LostItem → all `Available` FoundItems; new FoundItem → all `Reported` LostItems | New items are always `Reported`/`Available` at creation; filtering the *opposite* side keeps closed/claimed/returned items out of fresh suggestions. No re-scoring on item edits in this milestone. |
+| 9 | **`GET /matches` scoping reuses Module 3's `is_staff`** | The matching router imports `is_staff` from `items/service.py` rather than reinventing role logic. A User sees matches where *either* item is theirs; staff see all; cross-user accept/reject → 404 (consistent with Module 3's no-existence-leak rule). |
+| 10 | **Accept/reject only transitions from `Suggested`; otherwise 409** | Keeps `Match.Status` a strict Suggested → Accepted/Rejected one-way move in this milestone, mirroring the future claims workflow. Effect of accept is **only** `Match.Status` update — Claim creation is explicitly Module 5's job. |
+
+### Deviations
+
+- **None from `Entities.md` or the Module 4 task list.** The `Match` table already existed from Milestone 1 (no schema change this milestone). One wording note: the issue says "run in a Python shell **inside the backend container**" — Phase 1 runs the backend from `backend/.venv` on the host (only Postgres is containerized), so the shell-test proof ran in that exact interpreter, which is the same runtime the API uses. `Notes.md` §10.1 documents the three sample pairs and outputs.
+- The `?status=` query filter on `GET /matches` is a small convenience beyond "filtered by item or user" — harmless, documented in `Notes.md` §10.3.
+
+### Known gaps / risks into Module 5
+
+- **Matching only runs once at creation** — editing an item later does not re-score it against the opposite side. If the demo edits items after matching, this will miss matches.
+- **No sibling auto-rejection** — accepting a match does not auto-reject other `Suggested` matches on the same lost item; the Claims workflow (Module 5) may want that.
+- **In-process `BackgroundTask`** — a slow scoring pass competes with the next request's event loop under real load. Fine for a pilot; if the item count grows, move scoring to a worker process (still no queue per `ABOUT.md` unless the architecture decision changes).
+- **No location geocoding / no brand-colour matching** — deliberately out of the V1 constraint; candidates for tuning if demo matches feel wrong.
+- **FoundItem has no "found at" location** — matching uses `storage_location`, which may differ from where the item was actually found; revisit before Phase 2.

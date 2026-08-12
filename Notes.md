@@ -730,7 +730,170 @@ curl -s -H "Authorization: Bearer $OTOKEN" http://localhost:8000/items/lost
 # expected: the User sees only their own items; the Officer sees all
 ```
 
-## 10. Module status
+## 10. Matching Engine API (Module 4)
+
+The Matching module (`backend/app/modules/matching/`) scores every new
+LostItem/FoundItem against opposite-type items and writes `Match` rows —
+**one matching engine, in-process with the rest of the monolith** (no message
+queue, no HTTP between modules, per `ABOUT.md`). The scoring pass runs as a
+`BackgroundTask` *after* the creation response is sent, so item creation never
+blocks on matching.
+
+### 10.1 Scoring model (`utils/similarity.py`)
+
+Pure, deterministic, offline scoring — no LLM, no network, no external
+service. One LostItem/FoundItem pair → a numeric `MatchScore` (0–100,
+`Decimal`/`Numeric(5,2)`) plus a human-readable `MatchReason`.
+
+Formula (weights sum to 100):
+
+| Factor | Weight | Rule |
+|---|---|---|
+| **Category** | 40 | **Hard gate** — different `category_id` → score `0.00` (reason `Different category (X vs Y)`) |
+| **Location** | 15 | `15 × Jaccard(location_lost tokens, storage_location tokens)`; reason mentions location only when similarity ≥ 0.4 (score still earns partial credit below that) |
+| **Date** | 15 | `15 × max(0, 1 − days_apart / 14)` — identical dates score 15, decaying linearly to 0 at ≥ 14 days apart |
+| **Description** | 30 | `30 × Jaccard(description tokens)` (lowercased, punctuation stripped, small stopword list) |
+
+Missing data for a factor contributes 0 (neutral) — it never penalises the
+other factors. Total is capped at 100. Note: the FoundItem side uses
+`storage_location` (the only location the model stores) as its location —
+interpretation recorded in `Review.md`.
+
+**Worked examples** (from the issue-1 shell-test proof — the exact samples and
+outputs):
+
+```
+OBVIOUS MATCH:     score=100.00 (SUGGESTED) reason='same category (category 1); same location; same date; 100% description overlap'
+OBVIOUS NON-MATCH: score=0.00    (below threshold) reason='Different category (category 1 vs 3)'
+PARTIAL MATCH:     score=78.22   (SUGGESTED) reason='same category (category 2); 3 day(s) apart; 71% description overlap'
+```
+
+### 10.2 Threshold
+
+`MATCH_THRESHOLD = 60.00` (defined in `similarity.py`). A `Match` row with
+`Status='Suggested'` is created only for scores `≥ 60.00`. Rationale: with
+category as a hard gate (40 pts), 60 requires meaningful additional signal —
+e.g. close dates, strong description overlap, or a combination — while
+staying permissive enough for a campus pilot. Tuning guidance in
+`Review.md` §Module 4.
+
+### 10.3 Endpoint summary
+
+| Method | Path | Auth required | Purpose |
+|---|---|---|---|
+| `GET` | `/matches` | Bearer, any active role (scoped) | List matches; Users see only matches on their own items |
+| `POST` | `/matches/{match_id}/accept` | Bearer, owner of either item, or staff | Set `Match.Status` → `Accepted` (from `Suggested` only) |
+| `POST` | `/matches/{match_id}/reject` | Bearer, owner of either item, or staff | Set `Match.Status` → `Rejected` (from `Suggested` only) |
+
+`GET /matches` supports optional query filters: `item_id` (match where the
+lost **or** found item is that id), `user_id` (staff only — filters matches
+touching that user's items; non-staff always get their own scoped view), and
+`status` (`Suggested`/`Accepted`/`Rejected`).
+
+### 10.4 Scoping rules (callout)
+
+A plain `User` only ever sees matches where **either** the lost item or the
+found item is theirs. Officer/Administrator see **all** matches. Cross-user
+access to accept/reject returns **404** (never 403), so the API never reveals
+whether a match exists for another user's items. This reuses the Module 3
+scoping pattern via `is_staff` from `items/service.py`.
+
+### 10.5 Per-endpoint reference
+
+#### `GET /matches`
+
+curl (User — scoped to own items):
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/matches
+```
+
+curl (Officer — unscoped, filtered by status):
+
+```bash
+curl -H "Authorization: Bearer $OTOKEN" 'http://localhost:8000/matches?status=Suggested'
+```
+
+Success response (`200`):
+
+```json
+[
+  {
+    "id": 1,
+    "lost_item_id": 4,
+    "found_item_id": 3,
+    "match_score": 100.00,
+    "match_reason": "same category (category 1); same location; same date; 100% description overlap",
+    "status": "Suggested",
+    "generated_at": "2026-08-12T10:00:00Z"
+  }
+]
+```
+
+Errors: `401` missing/invalid token; `403` suspended account. (List scopes
+silently — a User filtering by another user's ids gets an empty list, never
+an error.)
+
+#### `POST /matches/{match_id}/accept` / `POST /matches/{match_id}/reject`
+
+curl:
+
+```bash
+curl -X POST http://localhost:8000/matches/1/accept -H "Authorization: Bearer $TOKEN"
+curl -X POST http://localhost:8000/matches/2/reject -H "Authorization: Bearer $TOKEN"
+```
+
+Success response (`200`): the match with `status` now `Accepted` / `Rejected`.
+
+Errors:
+
+| Code | When |
+|---|---|
+| `401` | missing/invalid token |
+| `403` | suspended account |
+| `404` | match doesn't exist, or caller owns neither item |
+| `409` | match already resolved (status ≠ `Suggested`) — `Match already accepted/rejected` |
+
+### 10.6 Async behavior note
+
+The Items module registers the scoring pass as a `FastAPI BackgroundTask` on
+item creation (`POST /items/lost`, `POST /items/found`). The client gets the
+`201` creation response **immediately**; `Match` rows appear a moment later.
+Measured in the issue-2 verification: a FoundItem creation that produced a
+`100.00` match returned in **~106 ms** with the `Match` row already queryable
+right after. Do not poll for a match inside the same request that creates the
+item — poll `GET /matches` after a short delay (or after a few hundred ms).
+
+### 10.7 Quick end-to-end test sequence
+
+```bash
+# login as two different users (obvious match pair)
+TA=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+TB=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"bob@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# 1. ada reports a lost item; bob registers the matching found item
+curl -s -X POST http://localhost:8000/items/lost -H "Authorization: Bearer $TA" \
+  -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Black Nike backpack","description":"Black Nike backpack with a silver laptop sleeve","date_lost":"2026-08-10","location_lost":"Library"}'
+curl -s -X POST http://localhost:8000/items/found -H "Authorization: Bearer $TB" \
+  -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Black Nike backpack","description":"Black Nike backpack with a silver laptop sleeve","date_found":"2026-08-10","storage_location":"Library"}'
+
+# 2. the creation response returns immediately; the Match appears right after
+sleep 1
+curl -s -H "Authorization: Bearer $TA" http://localhost:8000/matches
+
+# 3. accept the suggested match, then confirm the status flipped
+MATCH_ID=$(curl -s -H "Authorization: Bearer $TA" http://localhost:8000/matches \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')
+curl -s -X POST http://localhost:8000/matches/$MATCH_ID/accept -H "Authorization: Bearer $TB"
+```
+
+## 11. Module status
 
 | Milestone | Status |
 |-----------|--------|
@@ -738,5 +901,6 @@ curl -s -H "Authorization: Bearer $OTOKEN" http://localhost:8000/items/lost
 | Module 1 — Local Postgres & schema | ✅ closed (see `issues/completed.md`) |
 | Module 2 — Authentication | ✅ closed (see `issues/completed.md`) |
 | Module 3 — Item Management | ✅ closed (see `issues/completed.md`) |
-| Modules 4–8 | not started (per scope) |
+| Module 4 — Matching Engine | ✅ closed (see `issues/completed.md`) |
+| Modules 5–8 | not started (per scope) |
 | Module 9 — Cloud migration (optional) | not started |

@@ -165,3 +165,38 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 - `feat: add StorageBackend interface and LocalDiskStorage`
 - `feat: add Attachment entity_id column with migration`
 - `chore: add uploads volume to docker-compose.yml`
+
+---
+
+## [Module 4] `similarity.py` scoring function + shell tests
+
+**Closed:** 2026-08-12
+**Branch:** `feature/similarity-scoring`
+**Definition of done met:** ran the pure `score_pair()` against three hand-written sample dicts (obvious match / obvious non-match / partial match) in the backend's Python shell and captured the transcript (`/tmp/similarity_shell_test.txt`, reproduced in `Notes.md` §10.1): `OBVIOUS MATCH: score=100.00 (SUGGESTED) reason='same category (category 1); same location; same date; 100% description overlap'`; `OBVIOUS NON-MATCH: score=0.00 (below threshold) reason='Different category (category 1 vs 3)'`; `PARTIAL MATCH: score=78.22 (SUGGESTED) reason='same category (category 2); 3 day(s) apart; 71% description overlap'` — before any API wiring existed. Note: Phase 1 runs the backend from `backend/.venv` on the host (only Postgres is containerized), so the shell test ran in the exact interpreter the API uses (see `Review.md` §Module 4).
+
+**Files committed:**
+- `backend/app/modules/matching/__init__.py`
+- `backend/app/modules/matching/utils/__init__.py`
+- `backend/app/modules/matching/utils/similarity.py` (`score_pair`, `MatchResult`, `MATCH_THRESHOLD`)
+
+**Commits:**
+- `feat: add similarity.py scoring function`
+
+---
+
+## [Module 4] Wire matching into item creation via BackgroundTask
+
+**Closed:** 2026-08-12
+**Branch:** `feature/matching-background-task`
+**Definition of done met:** creating a FoundItem matching an existing LostItem returned `201` in **~106 ms** (creation did not wait on scoring) and a `Match` row (`score=100.00`, `status=Suggested`, human-readable `match_reason`) was queryable via `GET /matches` immediately after. Verified through the live API: obvious match → `100.00` Suggested; obvious non-match (different category) → no row; partial match → `78.22` Suggested (matches the shell test exactly); scoping (grace sees 0, officer sees all, cross-user accept → 404); accept → `Accepted`, reject → `Rejected`, re-resolution → 409; filters `?status=`, `?item_id=`, `?user_id=`.
+
+**Files committed:**
+- `backend/app/modules/matching/service.py` (BackgroundTask runners, de-dup, scoped-match helper)
+- `backend/app/modules/matching/schemas.py` (`MatchResponse`)
+- `backend/app/modules/matching/router.py` (`GET /matches`, accept/reject)
+- `backend/app/modules/items/lost_found.py` (creation registers the background task)
+- `backend/app/main.py` (includes matching router)
+
+**Commits:**
+- `feat: wire matching into item creation via BackgroundTask`
+- `feat: add GET /matches and accept/reject endpoints`
