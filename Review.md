@@ -98,6 +98,8 @@ a silent guess.
   uses `docker compose exec db psql` instead.
 - **`backend/` has no FastAPI app or `main.py` yet** — Module 2 scaffolds it.
 - **Alembic `downgrade` leaves the native enum types behind** (autogenerate artifact — types are created with the tables but not dropped with them). Cosmetic for V1; a later cleanup migration could drop orphaned types.
+- **FK columns have no indexes** (Postgres doesn't auto-index FKs). Harmless at V1 data volumes; Module 3+ should add indexes on high-traffic FK columns (`lost_items.user_id`, `claims.user_id`, `matches.lost_item_id`/`found_item_id`, …).
+- **The connection string is duplicated** in `alembic.ini`, `.env`/`.env.example`, and `seed.py`'s fallback. `Notes.md` §6/§7 always pass `DATABASE_URL` explicitly; acceptable for V1, but a shared config module would remove the divergence risk later.
 - **A stale `DATABASE_URL` in the developer's shell environment** (pointing at `asyncpg`/`db` host from the old `.env.example`) overrides the script defaults — commands in `Notes.md` §6/§7 set it explicitly.
 - **`develop` exists only locally** — branches were created and committed locally;
   nothing has been pushed to `origin` (no remote `develop` exists yet).

@@ -378,6 +378,6 @@ docker compose exec db psql -U trace -d trace -c \
 | Milestone | Status |
 |-----------|--------|
 | Module 0 — Orientation | ✅ closed (see `issues/completed.md`) |
-| Module 1 — Local Postgres & schema | in progress |
+| Module 1 — Local Postgres & schema | ✅ closed (see `issues/completed.md`) |
 | Modules 2–8 | not started (per scope) |
 | Module 9 — Cloud migration (optional) | not started |
