@@ -8,7 +8,9 @@ from fastapi import APIRouter
 
 from app.modules.items.categories import router as categories_router
 from app.modules.items.lost_found import router as lost_found_router
+from app.modules.items.uploads import router as uploads_router
 
 router = APIRouter()
 router.include_router(categories_router)
 router.include_router(lost_found_router)
+router.include_router(uploads_router)

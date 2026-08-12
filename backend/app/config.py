@@ -7,6 +7,7 @@ for the Milestone-1 stale-`DATABASE_URL` note).
 """
 
 import os
+from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 
@@ -29,6 +30,12 @@ DATABASE_URL = _get(
 JWT_SECRET = _get("JWT_SECRET", "change-this-development-secret")
 JWT_ALGORITHM = _get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_MINUTES = int(_get("JWT_EXPIRE_MINUTES", "60"))
+
+# --- Storage (Module 3) -----------------------------------------------------
+# LocalDiskStorage root (resolved to `backend/uploads/` by default).
+UPLOAD_DIR = Path(
+    _get("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads"))
+)
 
 # --- Password hashing -------------------------------------------------------
 # bcrypt cost factor: 2^12 iterations (OWASP-current). Trade-off documented in

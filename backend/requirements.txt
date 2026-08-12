@@ -10,6 +10,8 @@ psycopg[binary]>=3.1.0
 # Module 2 — FastAPI application + Authentication
 fastapi>=0.115
 uvicorn[standard]>=0.30
+# Module 3 — multipart form uploads (UploadFile)
+python-multipart>=0.0.9
 pyjwt>=2.8
 # bcrypt directly (not passlib): passlib 1.7.4 is unmaintained and breaks with
 # bcrypt 5.x on Python 3.14 — see Review.md §Module 2.
