@@ -26,19 +26,27 @@ __all__ = [
 ]
 
 
+def _b(password: str) -> bytes:
+    """UTF-8 encode, truncated to bcrypt's 72-byte hard limit.
+
+    bcrypt 5.x raises `ValueError` for inputs longer than 72 bytes instead of
+    silently truncating; truncating here (in both hash and verify) keeps the
+    behavior consistent and the endpoints 500-free.
+    """
+    return password.encode("utf-8")[:72]
+
+
 def hash_password(password: str) -> str:
     """Hash a plaintext password with bcrypt at the configured cost factor."""
-    return bcrypt.hashpw(
-        password.encode("utf-8"), bcrypt.gensalt(rounds=config.BCRYPT_ROUNDS)
-    ).decode("utf-8")
+    return bcrypt.hashpw(_b(password), bcrypt.gensalt(rounds=config.BCRYPT_ROUNDS)).decode(
+        "utf-8"
+    )
 
 
 def verify_password(plain_password: str, password_hash: str) -> bool:
     """Constant-time compare of a plaintext password against a bcrypt hash."""
     try:
-        return bcrypt.checkpw(
-            plain_password.encode("utf-8"), password_hash.encode("utf-8")
-        )
+        return bcrypt.checkpw(_b(plain_password), password_hash.encode("utf-8"))
     except ValueError:
         # Malformed stored hash — treat as a mismatch, never crash.
         return False

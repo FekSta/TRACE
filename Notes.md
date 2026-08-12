@@ -560,7 +560,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
   properly.
 - `email-validator` rejects reserved domains (`.local`, `.test`) — use
   `example.com` or a real campus domain in tests.
-- Password max length is **72 bytes** (bcrypt's hard limit); `min_length` 8.
+- Password `min_length` 8, `max_length` 72 chars; any password over bcrypt's **72-byte** hard limit is truncated to 72 bytes (in both hash and verify), so multibyte passwords never 500.
 - Status gating test: set a user `Suspended` in the DB, confirm login → `403`.
 
 ---

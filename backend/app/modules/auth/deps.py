@@ -61,8 +61,13 @@ def get_current_user(
     user_id = payload.get("UserID")
     if user_id is None:
         raise unauthorized
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        # Non-numeric UserID claim — treat as an invalid token, never 500.
+        raise unauthorized
 
-    user = db.get(User, int(user_id))
+    user = db.get(User, user_id)
     if user is None:
         raise unauthorized
 
