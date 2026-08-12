@@ -101,9 +101,161 @@ and `AuditLog` rows as side effects of business workflows.
 
 ## 4. Entity reference
 
-Populated in Module 1 as the SQLAlchemy models land — full attribute/type/enum/FK
-tables for all 11 entities, kept in sync with `assets/diagrams/data-model.md`.
-_(Added on the `feature/sqlalchemy-models` branch.)_
+All 11 persistent entities from `assets/diagrams/data-model.md`, kept in sync with
+that document. Models live in the single shared package `backend/app/models/`
+(one file per entity), all registered on `app.db.Base.metadata`. Column names are
+snake_case; the `Entities.md` attribute name is shown in the first column. Native
+Postgres enum types store the exact `Entities.md` value spellings (case-sensitive).
+
+### 4.1 User — `backend/app/models/user.py` → table `users` (Core, #1)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| UserID (PK) | `id` | INTEGER identity PK | — | — |
+| FirstName | `first_name` | VARCHAR(100) NOT NULL | | |
+| LastName | `last_name` | VARCHAR(100) NOT NULL | | |
+| StudentNumber | `student_number` | VARCHAR(50) NULL | | |
+| Email | `email` | VARCHAR(255) NOT NULL, UNIQUE | | |
+| PhoneNumber | `phone_number` | VARCHAR(30) NULL | | |
+| PasswordHash | `password_hash` | VARCHAR(255) NOT NULL | | |
+| Role | `role` | enum `user_role` NOT NULL, default `User` | `User`, `Officer`, `Administrator` | |
+| Status | `status` | enum `user_status` NOT NULL, default `Active` | `Active`, `Suspended`, `Inactive` | |
+| CreatedAt | `created_at` | TIMESTAMPTZ NOT NULL, default now() | | |
+
+### 4.2 LostItem — `backend/app/models/lost_item.py` → table `lost_items` (Core, #2)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| LostItemID (PK) | `id` | INTEGER identity PK | — | — |
+| UserID | `user_id` | INTEGER NOT NULL | | `users.id` (reporter) |
+| CategoryID | `category_id` | INTEGER NOT NULL | | `categories.id` |
+| Title | `title` | VARCHAR(200) NOT NULL | | |
+| Description | `description` | TEXT NULL | | |
+| Brand | `brand` | VARCHAR(100) NULL | | |
+| Colour | `colour` | VARCHAR(50) NULL | | |
+| DateLost | `date_lost` | DATE NULL | | |
+| LocationLost | `location_lost` | VARCHAR(200) NULL | | |
+| Status | `status` | enum `lost_item_status` NOT NULL, default `Reported` | `Reported`, `Matched`, `Claimed`, `Closed` | |
+
+### 4.3 FoundItem — `backend/app/models/found_item.py` → table `found_items` (Core, #3)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| FoundItemID (PK) | `id` | INTEGER identity PK | — | — |
+| UserID | `user_id` | INTEGER NOT NULL | | `users.id` (finder) |
+| CategoryID | `category_id` | INTEGER NOT NULL | | `categories.id` |
+| Title | `title` | VARCHAR(200) NOT NULL | | |
+| Description | `description` | TEXT NULL | | |
+| Brand | `brand` | VARCHAR(100) NULL | | |
+| Colour | `colour` | VARCHAR(50) NULL | | |
+| DateFound | `date_found` | DATE NULL | | |
+| StorageLocation | `storage_location` | VARCHAR(200) NULL | | |
+| Status | `status` | enum `found_item_status` NOT NULL, default `Available` | `Available`, `Claimed`, `Returned` | |
+
+### 4.4 Claim — `backend/app/models/claim.py` → table `claims` (Core, #4)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| ClaimID (PK) | `id` | INTEGER identity PK | — | — |
+| LostItemID | `lost_item_id` | INTEGER NOT NULL | | `lost_items.id` |
+| FoundItemID | `found_item_id` | INTEGER NOT NULL | | `found_items.id` |
+| UserID | `user_id` | INTEGER NOT NULL | | `users.id` (claimant) |
+| ClaimDate | `claim_date` | TIMESTAMPTZ NOT NULL, default now() | | |
+| VerificationStatus | `verification_status` | enum `claim_verification_status` NOT NULL, default `Pending` | `Pending`, `Approved`, `Rejected` | |
+| OfficerID | `officer_id` | INTEGER NULL | | `users.id` (reviewer) |
+| VerificationNotes | `verification_notes` | TEXT NULL | | |
+| CollectionDate | `collection_date` | TIMESTAMPTZ NULL | | |
+| Status | `status` | enum `claim_status` NOT NULL, default `Active` | `Active`, `Completed`, `Cancelled` | |
+
+### 4.5 Category — `backend/app/models/category.py` → table `categories` (Core, #5)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| CategoryID (PK) | `id` | INTEGER identity PK | — | — |
+| CategoryName | `category_name` | VARCHAR(100) NOT NULL, UNIQUE | | |
+| Description | `description` | VARCHAR(255) NULL | | |
+| Icon | `icon` | VARCHAR(100) NULL | | |
+| DisplayOrder | `display_order` | INTEGER NULL | | |
+| Status | `status` | enum `category_status` NOT NULL, default `Active` | `Active`, `Archived` | |
+| CreatedAt | `created_at` | TIMESTAMPTZ NOT NULL, default now() | | |
+
+### 4.6 Match — `backend/app/models/match.py` → table `matches` (Supporting, #6)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| MatchID (PK) | `id` | INTEGER identity PK | — | — |
+| LostItemID | `lost_item_id` | INTEGER NOT NULL | | `lost_items.id` |
+| FoundItemID | `found_item_id` | INTEGER NOT NULL | | `found_items.id` |
+| MatchScore | `match_score` | NUMERIC(5,2) NOT NULL | | |
+| MatchReason | `match_reason` | TEXT NULL | | |
+| Status | `status` | enum `match_status` NOT NULL, default `Suggested` | `Suggested`, `Accepted`, `Rejected` | |
+| GeneratedAt | `generated_at` | TIMESTAMPTZ NOT NULL, default now() | | |
+
+> Unique constraint `uq_matches_lost_item_found_item` on (`lost_item_id`, `found_item_id`) — one match per pair (interpretation recorded in `Review.md` §3).
+
+### 4.7 Notification — `backend/app/models/notification.py` → table `notifications` (Supporting, #7)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| NotificationID (PK) | `id` | INTEGER identity PK | — | — |
+| UserID | `user_id` | INTEGER NOT NULL | | `users.id` (recipient) |
+| Title | `title` | VARCHAR(200) NOT NULL | | |
+| Message | `message` | TEXT NULL | | |
+| NotificationType | `notification_type` | enum `notification_type` NOT NULL | `Match`, `Claim`, `Reminder`, `System` | |
+| IsRead | `is_read` | BOOLEAN NOT NULL, default false | | |
+| CreatedAt | `created_at` | TIMESTAMPTZ NOT NULL, default now() | | |
+
+> Gap (flagged in `Review.md` §4): `Entities.md` gives `Notification` no reference to the match/claim/item it relates to.
+
+### 4.8 VerificationRecord — `backend/app/models/verification_record.py` → table `verification_records` (Supporting, #8)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| VerificationID (PK) | `id` | INTEGER identity PK | — | — |
+| ClaimID | `claim_id` | INTEGER NOT NULL | | `claims.id` |
+| OfficerID | `officer_id` | INTEGER NOT NULL | | `users.id` |
+| VerificationMethod | `verification_method` | VARCHAR(100) NULL | | |
+| Result | `result` | enum `verification_result` NOT NULL | `Passed`, `Failed` | |
+| Notes | `notes` | TEXT NULL | | |
+| VerifiedAt | `verified_at` | TIMESTAMPTZ NOT NULL, default now() | | |
+
+### 4.9 CollectionRecord — `backend/app/models/collection_record.py` → table `collection_records` (Supporting, #9)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| CollectionID (PK) | `id` | INTEGER identity PK | — | — |
+| ClaimID | `claim_id` | INTEGER NOT NULL | | `claims.id` |
+| CollectedBy | `collected_by` | VARCHAR(200) NULL | | |
+| OfficerID | `officer_id` | INTEGER NOT NULL | | `users.id` |
+| CollectionDate | `collection_date` | TIMESTAMPTZ NOT NULL, default now() | | |
+| RecipientSignature | `recipient_signature` | VARCHAR(255) NULL | | |
+| Remarks | `remarks` | TEXT NULL | | |
+
+### 4.10 Attachment — `backend/app/models/attachment.py` → table `attachments` (Supporting, #10)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| AttachmentID (PK) | `id` | INTEGER identity PK | — | — |
+| FileName | `file_name` | VARCHAR(255) NOT NULL | | |
+| FilePath | `file_path` | VARCHAR(500) NOT NULL | | |
+| FileType | `file_type` | VARCHAR(50) NOT NULL | | |
+| UploadedBy | `uploaded_by` | INTEGER NOT NULL | | `users.id` (uploader) |
+| UploadedAt | `uploaded_at` | TIMESTAMPTZ NOT NULL, default now() | | |
+| RelatedEntity | `related_entity` | enum `related_entity` NOT NULL | `LostItem`, `FoundItem`, `Claim` | |
+
+> Gap (flagged in `Review.md` §4): `Entities.md` gives `Attachment` no FK to the related item/claim row.
+
+### 4.11 AuditLog — `backend/app/models/audit_log.py` → table `audit_logs` (Supporting, #11)
+
+| Entities.md | Column | Type / constraints | Enum values | FK → |
+|---|---|---|---|---|
+| AuditID (PK) | `id` | INTEGER identity PK | — | — |
+| UserID | `user_id` | INTEGER NULL (system actions have no actor — `Review.md` §3) | | `users.id` |
+| Action | `action` | VARCHAR(50) NOT NULL | | |
+| EntityName | `entity_name` | VARCHAR(100) NOT NULL | | |
+| EntityID | `entity_id` | INTEGER NULL | | |
+| Timestamp | `timestamp` | TIMESTAMPTZ NOT NULL, default now() | | |
+| IPAddress | `ip_address` | VARCHAR(50) NULL | | |
 
 ---
 

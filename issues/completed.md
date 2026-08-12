@@ -40,3 +40,25 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 - `docs: document db service usage in Notes.md and issue log`
 
 > Note: `.env` was written locally (per the issue: "Set local-only credentials via `.env`") but is gitignored and intentionally not committed.
+
+---
+
+## [Module 1] SQLAlchemy models for all 11 entities
+
+**Closed:** 2026-08-12
+**Branch:** `feature/sqlalchemy-models`
+**Definition of done met:** All 11 models exist in the single shared package `backend/app/models/` (one file per entity), import cleanly with no circular-import errors, all 17 FK relationships from `Entities.md` are declared in code, every attribute type and Enum value matches `Entities.md` exactly, and the Postgres DDL for all 11 tables compiles.
+
+**Files committed:**
+- `backend/app/__init__.py`
+- `backend/app/db.py` (shared `Base`)
+- `backend/app/models/__init__.py` (registers all 11 models)
+- `backend/app/models/enums.py` (Python enums + native Postgres enum types)
+- `backend/app/models/{user,lost_item,found_item,claim,category,match,notification,verification_record,collection_record,attachment,audit_log}.py`
+- `backend/requirements.txt` (SQLAlchemy 2.0.52, alembic 1.19.1, psycopg 3.3.4)
+- `Notes.md` (entity reference §4)
+- `issues/completed.md` (this entry)
+
+**Commits:**
+- `feat: add SQLAlchemy models for all 11 entities`
+- `docs: document entity reference in Notes.md and issue log`
