@@ -20,3 +20,23 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 
 **Commits:**
 - `docs: add Module 0 orientation notes, review, and issue log`
+
+---
+
+## [Module 1] Add `db` (Postgres) service to docker-compose.yml
+
+**Closed:** 2026-08-12
+**Branch:** `chore/docker-postgres-service`
+**Definition of done met:** `docker compose up db` from a wiped state brought up a fresh, empty Postgres 16.14 (healthcheck green) with no manual steps; host TCP connection to `localhost:5432` confirmed; a marker table survived `docker compose restart db`, proving the named volume persists data.
+
+**Files committed:**
+- `docker-compose.yml`
+- `.env.example` (DATABASE_URL → `postgresql+psycopg://`, host-note comment added)
+- `Notes.md` (local database section)
+- `issues/completed.md` (this entry)
+
+**Commits:**
+- `chore: add db service to docker-compose.yml`
+- `docs: document db service usage in Notes.md and issue log`
+
+> Note: `.env` was written locally (per the issue: "Set local-only credentials via `.env`") but is gitignored and intentionally not committed.

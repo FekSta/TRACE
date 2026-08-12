@@ -109,8 +109,36 @@ _(Added on the `feature/sqlalchemy-models` branch.)_
 
 ## 5. Local database (`docker compose up db`)
 
-Populated in Module 1 as the `db` service lands. _(Added on the
-`chore/docker-postgres-service` branch.)_
+Phase 1 uses a local Postgres 16 container defined by the `db` service in the
+root `docker-compose.yml`. No cloud account involved.
+
+```bash
+docker compose up db          # start the db service (fresh Postgres, empty)
+docker compose ps             # status — `db` should report (healthy)
+docker compose down -v        # stop and wipe the data volume (fresh start)
+```
+
+Connecting:
+
+- **psql (in container)** — `docker compose exec db psql -U trace -d trace`
+- **psql (host, if installed)** — `psql -h localhost -p 5432 -U trace -d trace`
+  (password = `POSTGRES_PASSWORD`)
+- **GUI (pgAdmin / TablePlus / DBeaver)** — host `localhost`, port `5432`,
+  database `trace`, user `trace`
+
+Env vars used (from `.env`, gitignored; sensible defaults are inlined in
+`docker-compose.yml` via `${VAR:-default}` so a fresh checkout works with no
+`.env`):
+
+| Var | Default | Used for |
+|-----|---------|----------|
+| `POSTGRES_DB` | `trace` | Database name |
+| `POSTGRES_USER` | `trace` | Role / owner |
+| `POSTGRES_PASSWORD` | `trace_local_password` | Role password |
+| `DATABASE_URL` | `postgresql+psycopg://trace:trace_local_password@localhost:5432/trace` | Host-side tools (Alembic, seed) — host `localhost` here; use `db` when running on the compose network |
+
+Data lives in the named volume `trace_pgdata`: it survives `docker compose
+restart` and `docker compose down` — only `docker compose down -v` wipes it.
 
 ---
 
