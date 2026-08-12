@@ -62,3 +62,24 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 **Commits:**
 - `feat: add SQLAlchemy models for all 11 entities`
 - `docs: document entity reference in Notes.md and issue log`
+
+---
+
+## [Module 1] Alembic migration + seed Category table
+
+**Closed:** 2026-08-12
+**Branch:** `feature/alembic-migration-seed`
+**Definition of done met:** `alembic upgrade head` against a fresh `db` container created all 11 tables with correct foreign keys (verified in Postgres: 11 tables, 17 FKs in `information_schema`), and the seed script populated the 4 starter categories (Electronics, Bags, Clothes, Documents & Cards) — re-running the seed reports "exists", proving idempotency. Native enum values stored exactly as spelled in `Entities.md` (verified via `pg_enum`, e.g. `user_role` = User/Officer/Administrator).
+
+**Files committed:**
+- `backend/alembic.ini` (dev URL default + `prepend_sys_path`)
+- `backend/alembic/env.py` (registers `app.models`, reads `DATABASE_URL`)
+- `backend/alembic/versions/405c749934b5_initial_schema_11_entities.py`
+- `backend/seed.py` (idempotent starter-category seed)
+- `Notes.md` (Alembic usage §6, quick verification sequence §7)
+- `Review.md` (exact tool versions, new risks)
+- `issues/completed.md` (this entry)
+
+**Commits:**
+- `feat: add alembic initial schema migration and category seed`
+- `docs: document alembic workflow and verification sequence`

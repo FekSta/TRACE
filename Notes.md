@@ -296,16 +296,80 @@ restart` and `docker compose down` — only `docker compose down -v` wipes it.
 
 ## 6. Alembic usage
 
-Populated in Module 1 as the migration setup lands. _(Added on the
-`feature/alembic-migration-seed` branch.)_
+Migrations live in `backend/alembic/` and are generated from the models in
+`backend/app/models/` (via `env.py` → `Base.metadata`). Alembic reads the
+`DATABASE_URL` env var; without it, it falls back to the dev URL in
+`backend/alembic.ini`. Host-side tools run from `backend/` using the venv
+(`backend/.venv`, gitignored).
+
+```bash
+# One-time setup (per checkout)
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+export DATABASE_URL='postgresql+psycopg://trace:trace_local_password@localhost:5432/trace'
+```
+
+Generate a migration from the models:
+
+```bash
+cd backend
+.venv/bin/alembic revision --autogenerate -m "describe the change"
+```
+
+Apply / inspect:
+
+```bash
+.venv/bin/alembic upgrade head   # apply all pending migrations
+.venv/bin/alembic current        # current revision
+.venv/bin/alembic history        # revision list
+.venv/bin/alembic downgrade -1   # roll back one revision
+```
+
+Re-run the seed script (idempotent — safe to run any time):
+
+```bash
+cd backend
+.venv/bin/python seed.py
+```
 
 ---
 
 ## 7. Quick verification sequence
 
-Populated in Module 1 — copy-paste commands proving DB + models + migration +
-seed all work together (mirrors `api.md`'s "quick end-to-end test sequence"
-section). _(Added on the `feature/alembic-migration-seed` branch.)_
+Copy-paste commands proving DB + models + migration + seed all work together
+(mirrors `api.md`'s "quick end-to-end test sequence" — no GUI needed; `psql`
+runs inside the `db` container):
+
+```bash
+# 1. Fresh database from a clean state
+cd <repo root>
+docker compose down -v
+docker compose up -d db
+
+# 2. Host tooling
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+export DATABASE_URL='postgresql+psycopg://trace:trace_local_password@localhost:5432/trace'
+
+# 3. Migrate to head
+.venv/bin/alembic upgrade head
+
+# 4. Seed the 4 starter categories
+.venv/bin/python seed.py
+
+# 5. Verify: 11 tables, 17 FKs, 4 categories
+docker compose exec db psql -U trace -d trace -c \
+  "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' AND table_name <> 'alembic_version';"
+docker compose exec db psql -U trace -d trace -c \
+  "SELECT count(*) FROM information_schema.table_constraints WHERE constraint_type='FOREIGN KEY';"
+docker compose exec db psql -U trace -d trace -c \
+  "SELECT category_name FROM categories ORDER BY display_order;"
+
+# Expected: 11 tables, 17 FKs, and Electronics / Bags / Clothes / Documents & Cards
+```
 
 ---
 
