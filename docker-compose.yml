@@ -1,0 +1,36 @@
+# TRACE — local development stack (Phase 1, 100% local)
+#
+# This file currently defines only the `db` service (Postgres). Later
+# milestones add `backend`, `frontend`, and `mailpit`
+# (see issues/Trace_isses.md — Module 8 assembles all four).
+#
+# Usage:
+#   docker compose up db        # start Postgres (fresh from a clean checkout)
+#   docker compose down -v      # stop and wipe data (back to fresh state)
+#   docker compose exec db psql -U trace -d trace   # connect with psql
+#
+# Credentials come from .env (gitignored). Defaults are inlined with
+# ${VAR:-default} interpolation so the file works even when .env is absent
+# (e.g. a fresh checkout), with no manual steps beyond `docker compose up db`.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: trace-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trace}
+      POSTGRES_USER: ${POSTGRES_USER:-trace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trace_local_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - trace_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trace} -d ${POSTGRES_DB:-trace}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  trace_pgdata:
