@@ -95,6 +95,11 @@ def score_pair(lost: Mapping, found: Mapping) -> MatchResult:
 
     - lost:  ``category_id``, ``description``, ``date_lost``, ``location_lost``
     - found: ``category_id``, ``description``, ``date_found``, ``storage_location``
+
+    Category note: the hard gate only fires when *both* sides have a
+    ``category_id``; if one side is missing, the pair gets the full 40 points
+    (benefit of the doubt). Through the API this cannot happen — both item
+    tables have NOT-NULL category FKs — but hand-written dicts may hit it.
     """
 
     # --- Category (hard gate) ---------------------------------------------

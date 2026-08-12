@@ -197,6 +197,7 @@ a silent guess.
 
 - **Matching only runs once at creation** — editing an item later does not re-score it against the opposite side. If the demo edits items after matching, this will miss matches.
 - **No sibling auto-rejection** — accepting a match does not auto-reject other `Suggested` matches on the same lost item; the Claims workflow (Module 5) may want that.
+- **Deleting an item that has `Match` rows now 500s (FK `IntegrityError`)** — Module 3's hard `DELETE /items/{...}` still exists, and `matches` has FKs to both item tables with no `ondelete`. This interaction is new as of Module 4; Module 5 should decide between `ondelete="CASCADE"` (or a migration) and soft-deleting items before any delete path is demoed. `get_scoped_match` lazy-loads the item relationships, so this stays unreachable via the API only because the FK blocks the delete.
 - **In-process `BackgroundTask`** — a slow scoring pass competes with the next request's event loop under real load. Fine for a pilot; if the item count grows, move scoring to a worker process (still no queue per `ABOUT.md` unless the architecture decision changes).
 - **No location geocoding / no brand-colour matching** — deliberately out of the V1 constraint; candidates for tuning if demo matches feel wrong.
 - **FoundItem has no "found at" location** — matching uses `storage_location`, which may differ from where the item was actually found; revisit before Phase 2.

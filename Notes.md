@@ -825,7 +825,7 @@ Success response (`200`):
     "match_score": 100.00,
     "match_reason": "same category (category 1); same location; same date; 100% description overlap",
     "status": "Suggested",
-    "generated_at": "2026-08-12T10:00:00Z"
+    "generated_at": "2026-08-12T10:00:00.123456+00:00"
   }
 ]
 ```
