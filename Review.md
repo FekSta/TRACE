@@ -103,3 +103,36 @@ a silent guess.
 - **A stale `DATABASE_URL` in the developer's shell environment** (pointing at `asyncpg`/`db` host from the old `.env.example`) overrides the script defaults — commands in `Notes.md` §6/§7 set it explicitly.
 - **`develop` exists only locally** — branches were created and committed locally;
   nothing has been pushed to `origin` (no remote `develop` exists yet).
+
+---
+
+## Module 2 — Authentication (decided 2026-08-12)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **JWT library: PyJWT 2.13.0** (not python-jose) | Actively maintained, pure Python (no `ecdsa`/`rsa`/`pyasn1` chain), frictionless on Python 3.14; python-jose is effectively unmaintained and heavier. `TRACE_Issues.md` permits either. |
+| 2 | **Password hashing: the `bcrypt` library directly** (5.0.0, `$2b$`), cost factor **12** (2^12 iterations) | passlib 1.7.4 is unmaintained and **breaks with bcrypt 5.x on Python 3.14** — verified empirically: its wrap-bug probe feeds bcrypt a >72-byte secret, which bcrypt 5.x now rejects with `ValueError`. The issue's "passlib/bcrypt" is satisfied by bcrypt itself. Schemas enforce `max_length=72` (bcrypt's hard byte limit). |
+| 3 | **Minimal token claims**: `sub`, `UserID`, `Role`, `iat`, `exp` | DoD requires `UserID` and `Role`; nothing else is needed. Trade-off: embedding `Role` lets clients (Module 7 portal selection) read it without a DB hit, but the backend **never trusts it** — `require_role` checks the live DB role, so role changes apply immediately (cost: one DB lookup per request, fine for Phase 1). |
+| 4 | **Token lifetime: 60 minutes** (`JWT_EXPIRE_MINUTES=60`) | Short enough to bound exposure; no refresh tokens (Module 2 didn't request them — see gaps). |
+| 5 | **`HTTPBearer(auto_error=False)`** in `get_current_user` | HTTPBearer's built-in missing-credential error is **403**; the auth contract and DoD require **401** for missing tokens, so the dependency raises 401 itself. |
+| 6 | **`JWT_SECRET` lengthened to 45 chars** in `.env`/`.env.example` | PyJWT warns on HS256 keys shorter than 32 bytes; the old 30-char dev value triggered it. |
+| 7 | **Registration always creates role `User`** (no role field on the register schema) | Self-registration must not allow privilege escalation; Officer/Administrator assignment is an Administrator action in the Dashboard milestone. |
+| 8 | **FastAPI 0.141.1 wraps included routers in `_IncludedRouter`** | Cosmetic: `app.routes` no longer flattens included routes (they still serve correctly, verified via curl). Only affected the inspection code, not the app. |
+
+### Deviations
+
+- **None from `Entities.md`** — `Role`/`Status` enum values are reused verbatim from the model enums; `PasswordHash` is stored as the bcrypt hash string.
+- **None from `TRACE_Issues.md`'s Module 2 task list.** All tasks completed in order.
+- `passlib` → `bcrypt` direct (decision 2) — implementation detail within the issue's own "passlib/bcrypt" wording.
+- Test emails use `example.com` because `email-validator` 2.3 rejects reserved domains (`.local`, `.test`). No API behavior change.
+
+### Known gaps / risks into Module 3
+
+- **No refresh tokens / no logout**: an access token is valid until `exp` (60 min). Acceptable for Phase 1; revisit in Module 7 (frontend) or a security pass.
+- **No rate limiting on login** — brute-force protection is future work.
+- **`JWT_SECRET` is a plain `.env` value**, not a managed secret — fine for local Phase 1; must become a real secret for any shared environment.
+- **`GET /auth/test-protected` is throwaway** and must be removed in a later milestone.
+- **`Role` claim can go stale**; backend ignores it for authorization (DB role is authoritative) — the frontend should treat it as a hint, not a grant.
+- **The Items module exists only as a stub** (`GET /items/lost`) to prove `require_role`; Module 3 replaces it with real CRUD.

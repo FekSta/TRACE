@@ -83,3 +83,44 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 **Commits:**
 - `feat: add alembic initial schema migration and category seed`
 - `docs: document alembic workflow and verification sequence`
+
+---
+
+## [Module 2] Auth module — register/login/JWT
+
+**Closed:** 2026-08-12
+**Branch:** `feature/auth-register-login-jwt`
+**Definition of done met:** a curl login against the locally running backend returned an access token whose decoded payload (PyJWT, decoded with the app's own `JWT_SECRET`) contains `UserID` and `Role` claims. Register → 201, duplicate email → 409, wrong password / unknown email → 401, Suspended account → 403, validation → 422 — all verified with curl.
+
+**Files committed:**
+- `backend/requirements.txt`
+- `backend/app/config.py` (env loading, JWT settings, bcrypt rounds)
+- `backend/app/db.py` (engine + `SessionLocal` + `get_db`)
+- `backend/app/main.py` (FastAPI app)
+- `backend/app/modules/__init__.py`
+- `backend/app/modules/auth/__init__.py`
+- `backend/app/modules/auth/schemas.py` (register/login/response/token schemas)
+- `backend/app/modules/auth/security.py` (bcrypt + JWT helpers)
+- `backend/app/modules/auth/router.py` (register/login)
+- `.env.example` (`JWT_SECRET` lengthened to 45 chars)
+
+**Commits:**
+- `feat: add register and login endpoints with JWT issuance`
+
+---
+
+## [Module 2] Reusable `require_role` dependency
+
+**Closed:** 2026-08-12
+**Branch:** `feature/require-role-dependency`
+**Definition of done met:** `GET /items/lost` (outside the Auth module) uses `require_role("User", "Officer", "Administrator")` — no token → 401, valid User/Officer/Admin token → 200; the throwaway `GET /auth/test-protected` (admin-only) returned 401 without a token, 403 for User and Officer tokens, 200 for an Administrator token; expired and garbage tokens → 401. Role gating demonstrably discriminates across all three roles.
+
+**Files committed:**
+- `backend/app/modules/auth/deps.py` (`get_current_user`, `require_role`)
+- `backend/app/modules/auth/router.py` (throwaway `GET /auth/test-protected`)
+- `backend/app/modules/items/__init__.py`
+- `backend/app/modules/items/router.py` (protected `GET /items/lost` stub)
+- `backend/app/main.py` (wire items router)
+
+**Commits:**
+- `feat: add require_role dependency and protect items stub route`

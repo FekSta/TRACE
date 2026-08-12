@@ -373,11 +373,204 @@ docker compose exec db psql -U trace -d trace -c \
 
 ---
 
-## 8. Module status
+## 8. Authentication API (Module 2)
+
+The Auth module (`backend/app/modules/auth/`) implements registration, login,
+and JWT issuance — the first real HTTP API in TRACE. Modules 3–6 will be
+referenced in this same style.
+
+### 8.1 Authentication scheme & tokens
+
+- **Scheme**: Bearer tokens — `Authorization: Bearer <access_token>`.
+- **Algorithm**: HS256, signed with `JWT_SECRET` from `.env` (never hardcoded,
+  never committed).
+- **Lifetime**: `JWT_EXPIRE_MINUTES` minutes (default **60**). No refresh
+  tokens in this milestone.
+- **Claims** (minimal set):
+
+  | Claim | Type | Meaning |
+  |---|---|---|
+  | `sub` | string | Standard subject — user id as a string |
+  | `UserID` | int | User primary key (DoD-required claim) |
+  | `Role` | string | Role at issue time (`User`/`Officer`/`Administrator`) — **informational**; authorization re-checks the live DB role |
+  | `iat` | int | Issued-at epoch seconds |
+  | `exp` | int | Expiry epoch seconds |
+
+- **Status gating** (`Active`/`Suspended`/`Inactive`): only `Active` accounts
+  can log in (others get 403), and any token used by a non-`Active` account is
+  rejected on use (403).
+
+### 8.2 Endpoint summary
+
+| Method | Path | Auth required | Purpose |
+|---|---|---|---|
+| `POST` | `/auth/register` | none | Create a `User` account (role always `User`) |
+| `POST` | `/auth/login` | none | Exchange email + password for a JWT |
+| `GET` | `/auth/test-protected` | Bearer, `Administrator` only | THROWAWAY route proving 401/403 (remove later) |
+| `GET` | `/items/lost` | Bearer, any active role | Module 3 stub proving `require_role` works outside Auth |
+
+### 8.3 Per-endpoint reference
+
+#### `POST /auth/register`
+
+Request body:
+
+```json
+{
+  "first_name": "Ada",
+  "last_name": "Lovelace",
+  "student_number": "s1234567",
+  "email": "ada@example.com",
+  "phone_number": "+27123456789",
+  "password": "SuperSecret1!"
+}
+```
+
+curl:
+
+```bash
+curl -X POST http://localhost:8000/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"first_name":"Ada","last_name":"Lovelace","email":"ada@example.com","password":"SuperSecret1!"}'
+```
+
+`201 Created`:
+
+```json
+{
+  "id": 1,
+  "first_name": "Ada",
+  "last_name": "Lovelace",
+  "student_number": "s1234567",
+  "email": "ada@example.com",
+  "phone_number": "+27123456789",
+  "role": "User",
+  "status": "Active",
+  "created_at": "2026-08-12T20:45:12.229548Z"
+}
+```
+
+Errors: `409` (email already registered), `422` (validation).
+
+#### `POST /auth/login`
+
+Request body: `{"email": "...", "password": "..."}`. curl:
+
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"SuperSecret1!"}'
+```
+
+`200 OK`:
+
+```json
+{"access_token": "eyJ...", "token_type": "bearer"}
+```
+
+Errors: `401` (incorrect email or password — one uniform message, no user
+enumeration), `403` (account not active), `422` (validation).
+
+#### `GET /auth/test-protected` (throwaway)
+
+`200` only for `Administrator`; `401` no/invalid/expired token; `403` wrong role.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/auth/test-protected
+```
+
+#### `GET /items/lost` (Module 3 stub)
+
+`200` for any active account → `{"items": [], "stub": true, "requested_by": "..."}`;
+`401` without a token.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/items/lost
+```
+
+### 8.4 Error format
+
+All errors use FastAPI's standard shape `{"detail": "..."}`. Validation errors
+are `422` with a `detail` array. Codes in use so far:
+
+| Code | Meaning |
+|---|---|
+| `401` | Missing / malformed / expired token, or bad credentials (includes `WWW-Authenticate: Bearer` on protected routes) |
+| `403` | Wrong role, or account not `Active` |
+| `409` | Duplicate email on register |
+| `422` | Request body validation failure |
+
+### 8.5 `require_role` usage pattern (copy-paste for Modules 3–6)
+
+```python
+from fastapi import APIRouter, Depends
+from app.models import User
+from app.modules.auth.deps import require_role
+
+router = APIRouter(prefix="/things", tags=["things"])
+
+
+@router.get("")
+def list_things(
+    _: User = Depends(require_role("User", "Officer", "Administrator")),
+) -> dict:
+    return {"things": []}
+```
+
+- Accepts role strings **or** `UserRole` members (e.g. `require_role(UserRole.ADMINISTRATOR)`).
+- `401` when the token is missing/invalid/expired; `403` when the caller's
+  live DB role is not allowed; otherwise it resolves to the `User` row (use it
+  as the parameter if the handler needs the user).
+
+### 8.6 Quick end-to-end test sequence
+
+```bash
+# 0. prerequisites (from §5 and §6): docker compose up db; venv ready
+cd backend
+.venv/bin/uvicorn app.main:app --port 8000 &   # start the API
+
+# 1. register
+curl -s -X POST http://localhost:8000/auth/register -H 'Content-Type: application/json' \
+  -d '{"first_name":"Ada","last_name":"Lovelace","email":"ada@example.com","password":"SuperSecret1!"}'
+
+# 2. login and capture the token
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# 3. decode locally and confirm UserID + Role claims
+printf '%s' "$TOKEN" | cut -d. -f2 | python3 -c 'import sys,base64,json; s=sys.stdin.read().strip(); s+="="*(-len(s)%4); print(json.loads(base64.urlsafe_b64decode(s)))'
+# -> {'sub': '1', 'UserID': 1, 'Role': 'User', 'iat': ..., 'exp': ...}
+# (or paste the token at https://jwt.io)
+
+# 4. protected routes — 401 without a token, 200 with one
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/items/lost          # 401
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/items/lost          # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/auth/test-protected  # 401
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8000/auth/test-protected                                         # 403 (User is not an Administrator)
+```
+
+### 8.7 Testing notes
+
+- Test users created during this milestone: `ada@example.com` (User),
+  `officer@example.com` (Officer), `admin@example.com` (Administrator). The
+  officer/admin accounts were inserted directly into the DB using the app's own
+  bcrypt hasher (password `TestPass123!`); Module 8's demo seed will do this
+  properly.
+- `email-validator` rejects reserved domains (`.local`, `.test`) — use
+  `example.com` or a real campus domain in tests.
+- Password max length is **72 bytes** (bcrypt's hard limit); `min_length` 8.
+- Status gating test: set a user `Suspended` in the DB, confirm login → `403`.
+
+---
+
+## 9. Module status
 
 | Milestone | Status |
 |-----------|--------|
 | Module 0 — Orientation | ✅ closed (see `issues/completed.md`) |
 | Module 1 — Local Postgres & schema | ✅ closed (see `issues/completed.md`) |
-| Modules 2–8 | not started (per scope) |
+| Module 2 — Authentication | ✅ closed (see `issues/completed.md`) |
+| Modules 3–8 | not started (per scope) |
 | Module 9 — Cloud migration (optional) | not started |
