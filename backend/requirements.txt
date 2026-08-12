@@ -1,0 +1,7 @@
+# TRACE backend — Phase 1 (local) dependencies
+# Milestone 1: ORM models, migrations, and seed scripts.
+# Exact installed versions are recorded in Review.md §2.
+
+SQLAlchemy>=2.0.30
+alembic>=1.13.0
+psycopg[binary]>=3.1.0
