@@ -387,6 +387,26 @@ Migrations live in `backend/alembic/` and are generated from the models in
 `backend/alembic.ini`. Host-side tools run from `backend/` using the venv
 (`backend/.venv`, gitignored).
 
+### 6.0 Dependency lockfile (Module 8 hardening)
+
+`backend/requirements.in` is the human-authored **spec**; `backend/requirements.txt`
+is the **pip-compiled lockfile** — every transitive dependency pinned `==` (31
+packages, all verified against the demo image of 2026-08-13) — and it is what
+both the Docker image and the dev venv install. This makes every `make demo`
+build byte-for-byte reproducible regardless of what PyPI releases later.
+
+```bash
+# Add / bump a dependency: edit requirements.in, then regenerate the lock:
+pip install pip-tools
+pip-compile requirements.in --generate-hashes -o requirements.txt   # -o with hashes
+pip-compile requirements.in -o requirements.txt                      # or plain version pins
+# commit BOTH requirements.in and requirements.txt together
+```
+
+The base image is pinned too: `python:3.14.6-slim` (exact patch verified in
+the demo), replacing the floating `3.14-slim` tag. Rationale and the
+hash-pinning caveat are in `Review.md` §Module 8.
+
 > **Module 8:** in the dockerized stack you never run `alembic upgrade head`
 > yourself — the backend container entrypoint (`backend/docker-entrypoint.sh`)
 > runs it (plus the seed) automatically on every start. Host-side Alembic is
