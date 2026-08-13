@@ -392,15 +392,18 @@ Migrations live in `backend/alembic/` and are generated from the models in
 `backend/requirements.in` is the human-authored **spec**; `backend/requirements.txt`
 is the **pip-compiled lockfile** — every transitive dependency pinned `==` (31
 packages, all verified against the demo image of 2026-08-13) — and it is what
-both the Docker image and the dev venv install. This makes every `make demo`
-build byte-for-byte reproducible regardless of what PyPI releases later.
+both the Docker image and the dev venv install. Every `make demo` build
+installs **exactly these 31 pinned versions** no matter what PyPI releases
+later. Note: the lock is version-pinned but not hash-pinned (see the caveat in
+`Review.md` §Module 8).
 
 ```bash
 # Add / bump a dependency: edit requirements.in, then regenerate the lock:
 pip install pip-tools
-pip-compile requirements.in --generate-hashes -o requirements.txt   # -o with hashes
-pip-compile requirements.in -o requirements.txt                      # or plain version pins
+pip-compile requirements.in -o requirements.txt
 # commit BOTH requirements.in and requirements.txt together
+# (regenerate with the same Python the image uses — 3.14 — so transitive
+#  resolution can't drift; add --generate-hashes if you want hash pinning)
 ```
 
 The base image is pinned too: `python:3.14.6-slim` (exact patch verified in

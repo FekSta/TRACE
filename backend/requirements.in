@@ -7,8 +7,10 @@
 #
 # Regenerate the lock after editing this file:
 #   pip install pip-tools
-#   pip-compile requirements.in --generate-hashes -o requirements.txt
+#   pip-compile requirements.in -o requirements.txt
 #   # commit BOTH files together
+#   # (use the same Python the image runs — 3.14 — so transitive resolution
+#   #  can't drift; add --generate-hashes for hash pinning)
 #
 # Versions are pinned == to the exact set installed in the verified demo
 # image (Python 3.14.6, built 2026-08-13) — see Review.md §Module 8.
@@ -23,7 +25,7 @@ fastapi==0.141.1
 uvicorn[standard]==0.52.1
 # Module 3 — multipart form uploads (UploadFile)
 python-multipart==0.0.32
-pyjwt==2.13.0
+PyJWT==2.13.0
 # bcrypt directly (not passlib): passlib 1.7.4 is unmaintained and breaks with
 # bcrypt 5.x on Python 3.14 — see Review.md §Module 2.
 bcrypt==5.0.0
