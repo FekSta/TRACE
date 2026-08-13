@@ -27,6 +27,7 @@ from app.models.enums import (
     ClaimVerificationStatus,
     FoundItemStatus,
     LostItemStatus,
+    MatchStatus,
     VerificationResult,
 )
 from app.modules.items.service import is_staff  # reuse Module 3 role logic
@@ -93,6 +94,14 @@ def create_from_match(db: Session, match: Match, actor: User) -> Claim:
     returned untouched — a Match can only be accepted once, and this makes any
     retry safe.
     """
+    # Contract guard: a Claim is only ever created from an Accepted match. The
+    # only caller is the accept endpoint, but the check makes the service
+    # function safe for future callers (e.g. a Module 7 manual-claim flow).
+    if match.status != MatchStatus.ACCEPTED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Claim can only be created from an accepted match",
+        )
     existing = db.scalar(
         select(Claim).where(
             Claim.lost_item_id == match.lost_item_id,
@@ -128,7 +137,8 @@ def _ensure_verifiable(claim: Claim) -> None:
     rejected/completed claim, and never twice (terminal-state guard)."""
     if claim.status != ClaimStatus.ACTIVE:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Claim is not active"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Claim is not active (already completed or cancelled)",
         )
     if claim.verification_status != ClaimVerificationStatus.PENDING:
         raise HTTPException(
