@@ -15,11 +15,13 @@ writes commit together or none do. Each mutating step also writes exactly one
 ``AuditLog`` row (via ``audit``) — a Module 5 hard requirement.
 """
 
+from datetime import datetime, timezone
+
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, Claim, Match, User, VerificationRecord
+from app.models import AuditLog, Claim, CollectionRecord, Match, User, VerificationRecord
 from app.models.enums import (
     ClaimStatus,
     ClaimVerificationStatus,
@@ -193,6 +195,62 @@ def verify_claim(
         db,
         actor=officer,
         action=action,
+        entity_name="Claim",
+        entity_id=claim.id,
+    )
+    return claim
+
+
+# --- Collect (Module 5 issue 2) -------------------------------------------------
+
+def collect_claim(
+    db: Session,
+    *,
+    claim: Claim,
+    officer: User,
+    collected_by: str | None,
+    recipient_signature: str | None,
+    remarks: str | None,
+) -> Claim:
+    """Complete the workflow: hand the item over and finish the claim.
+
+    Requires an **Approved** claim (never Pending/Rejected) that is still
+    **Active** (never Cancelled or already-Completed — guards re-entry on
+    terminal states).
+
+    ``Claim.Status → Completed``, ``Claim.CollectionDate → now``,
+    ``LostItem → Closed``, ``FoundItem → Returned``. A ``CollectionRecord``
+    and a ``ClaimCollected`` AuditLog row join the same atomic transaction.
+    """
+    if claim.status != ClaimStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Claim is not active (already completed or cancelled)",
+        )
+    if claim.verification_status != ClaimVerificationStatus.APPROVED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Claim must be approved before collection",
+        )
+
+    claim.status = ClaimStatus.COMPLETED
+    claim.collection_date = datetime.now(timezone.utc)
+    claim.lost_item.status = LostItemStatus.CLOSED
+    claim.found_item.status = FoundItemStatus.RETURNED
+
+    db.add(
+        CollectionRecord(
+            claim_id=claim.id,
+            officer_id=officer.id,
+            collected_by=collected_by,
+            recipient_signature=recipient_signature,
+            remarks=remarks,
+        )
+    )
+    audit(
+        db,
+        actor=officer,
+        action="ClaimCollected",
         entity_name="Claim",
         entity_id=claim.id,
     )

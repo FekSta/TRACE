@@ -50,3 +50,14 @@ class ClaimVerifyRequest(BaseModel):
         if v == ClaimVerificationStatus.PENDING:
             raise ValueError("result must be 'Approved' or 'Rejected'")
         return v
+
+
+class ClaimCollectRequest(BaseModel):
+    """Details recorded when an approved item is handed to the claimant.
+
+    All fields optional — send ``{}`` to record the collection with no extras.
+    """
+
+    collected_by: str | None = Field(default=None, max_length=200)
+    recipient_signature: str | None = Field(default=None, max_length=255)
+    remarks: str | None = Field(default=None, max_length=2000)

@@ -15,8 +15,12 @@ from app.db import get_db
 from app.models import Claim, User
 from app.models.enums import ClaimVerificationStatus, UserRole
 from app.modules.auth.deps import get_current_user, require_role
-from app.modules.claims.schemas import ClaimResponse, ClaimVerifyRequest
-from app.modules.claims.service import get_scoped_claim, verify_claim
+from app.modules.claims.schemas import (
+    ClaimCollectRequest,
+    ClaimResponse,
+    ClaimVerifyRequest,
+)
+from app.modules.claims.service import collect_claim, get_scoped_claim, verify_claim
 from app.modules.items.service import is_staff
 
 router = APIRouter(tags=["claims"])
@@ -87,6 +91,38 @@ def verify_claim_endpoint(
         result=body.result,
         notes=body.notes,
         method=body.verification_method,
+    )
+    db.commit()
+    db.refresh(claim)
+    return claim
+
+
+@router.post("/claims/{claim_id}/collect", response_model=ClaimResponse)
+def collect_claim_endpoint(
+    claim_id: int,
+    body: ClaimCollectRequest,
+    current_user: User = Depends(
+        require_role(UserRole.OFFICER, UserRole.ADMINISTRATOR)
+    ),
+    db: Session = Depends(get_db),
+) -> Claim:
+    """Officer/Admin records the handover of an approved item.
+
+    ``Claim.Status → Completed``, ``CollectionDate → now``, ``LostItem →
+    Closed``, ``FoundItem → Returned``; writes a CollectionRecord and an
+    AuditLog row (atomic).
+
+    Errors: ``403`` for non-Officer callers, ``404`` unknown claim,
+    ``400`` claim not Approved or already Completed/Cancelled.
+    """
+    claim = _get_claim_or_404(db, claim_id)
+    collect_claim(
+        db,
+        claim=claim,
+        officer=current_user,
+        collected_by=body.collected_by,
+        recipient_signature=body.recipient_signature,
+        remarks=body.remarks,
     )
     db.commit()
     db.refresh(claim)
