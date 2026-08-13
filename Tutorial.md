@@ -96,8 +96,11 @@ On a fresh start the database contains:
 
 1. Open <http://localhost:5173> and log in as **`ada@example.com` /
    `SuperSecret1!`**.
-2. Open **My Matches** (left sidebar). You'll see the two suggested matches —
-   the backpack at 100% and the headphones at 100%.
+2. Open **My Matches** (left sidebar). You'll see your two suggested matches,
+   each scored **100%** — one for the *Black Nike backpack*, one for the
+   *Blue Sony headphones*. (Both reports belong to seeded users; if a card
+   shows an item number on the found side, that's the other user's report —
+   the score is what matters.)
 3. Click **Accept** on the *Black Nike backpack* match. TRACE creates an
    ownership claim for you automatically.
 
@@ -126,10 +129,15 @@ the four seeded categories, and the reports/audit screens.
 ### Step 5 — Report a new item (live matching)
 
 Still as Ada (log back in as the User), open **Report Lost Item** and report a
-lost *Black Nike backpack* in the **Library** (Bags category), matching the
-seeded description. Within a moment, **My Matches** shows a brand-new suggested
-match against the found backpack — the matching engine runs live on every
-report.
+lost *Blue Sony headphones* in the **Library** (Electronics category), with a
+similar description (e.g. *"Blue Sony wireless headphones with black carrying
+case"*). Within a moment, **My Matches** shows a brand-new suggested match
+against the found headphones — the matching engine runs live on every report.
+
+> Why the headphones and not the backpack: step 2 collected the backpack, so
+> that found item is no longer available to match against — the headphones
+> pair is the untouched one. The live-matching trick works with any new report
+> that resembles an *available* found item.
 
 ## 6. Resetting the demo
 
@@ -163,8 +171,8 @@ matches you've already accepted, which is why the reset above exists.
 **"address already in use" on startup.** Something else is already using a
 port — usually a leftover dev server. Stop it, then retry:
 ```bash
-# stop a leftover Vite dev server / host backend, for example:
-pkill -f "node .*vite" ; pkill -f "uvicorn"
+# stop a leftover Vite dev server / host backend (adjust paths if yours differ):
+pkill -f "frontend/node_modules/.bin/vite" ; pkill -f "uvicorn app.main"
 docker compose up --build
 ```
 
