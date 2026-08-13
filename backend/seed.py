@@ -349,6 +349,23 @@ def _run_matching_and_verify(session: Session, pairs: list[tuple[LostItem, Found
     for _, found in pairs:
         run_matching_for_found_item(found.id)
 
+    # Also assert there are no spurious suggestions: on a fresh seed the only
+    # `Suggested` matches must be exactly the expected pairs.
+    total = (
+        session.scalar(
+            select(func.count())
+            .select_from(Match)
+            .where(Match.status == MatchStatus.SUGGESTED)
+        )
+        or 0
+    )
+    if total != len(pairs):
+        raise RuntimeError(
+            f"SEED FAILURE: expected exactly {len(pairs)} Suggested match(es), "
+            f"but the matching module produced {total} — the demo would show "
+            "unexpected suggestions. Re-check the seeded item attributes."
+        )
+
     for lost, found in pairs:
         match = session.scalar(
             select(Match).where(
