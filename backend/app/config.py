@@ -37,6 +37,16 @@ UPLOAD_DIR = Path(
     _get("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads"))
 )
 
+# --- Email (Module 6) --------------------------------------------------------
+# Phase 1 sends through the local Mailpit catcher only — no external SMTP
+# relay, no Resend (`ABOUT.md`'s single notification channel: email).
+# SMTP_HOST is `localhost` when the backend runs on the host (Phase 1); the
+# docker-compose value is `mailpit` for the Module 8 backend container.
+EMAIL_BACKEND = _get("EMAIL_BACKEND", "smtp")
+SMTP_HOST = _get("SMTP_HOST", "localhost")
+SMTP_PORT = int(_get("SMTP_PORT", "1025"))
+SMTP_FROM = _get("SMTP_FROM", "no-reply@trace.local")
+
 # --- Password hashing -------------------------------------------------------
 # bcrypt cost factor: 2^12 iterations (OWASP-current). Trade-off documented in
 # Review.md §Module 2.
