@@ -1,17 +1,30 @@
-# TRACE — local development stack (Phase 1, 100% local)
+# TRACE — local demo stack (Phase 1, 100% local; Module 8 demo kit)
 #
-# Services so far: `db` (Postgres, Module 1) and `mailpit` (local email
-# catcher, Module 6). Module 8 assembles the full four-service stack by
-# adding `backend` and `frontend`.
+# All four services in one file. `docker compose up --build` (or `make demo`)
+# is the ONLY prerequisite for a clean checkout: no `.env` needed (defaults are
+# inlined below), no host `node_modules`, no host Python venv.
 #
-# Usage:
-#   docker compose up -d db mailpit   # start Postgres + Mailpit
-#   docker compose down -v            # stop and wipe data (back to fresh state)
-#   docker compose exec db psql -U trace -d trace   # connect with psql
+# Compose-network addresses:
+#   db        postgres:16-alpine          postgresql://trace:trace_local_password@db:5432/trace
+#   backend   FastAPI / uvicorn :8000     DATABASE_URL -> db, SMTP_HOST -> mailpit
+#   frontend  built React bundle (nginx)  VITE_API_URL=http://localhost:8000 baked in at build
+#   mailpit   axllent/mailpit:v1.30.7     SMTP :1025, web UI :8025
 #
-# Credentials come from .env (gitignored). Defaults are inlined with
-# ${VAR:-default} interpolation so the file works even when .env is absent
-# (e.g. a fresh checkout), with no manual steps beyond `docker compose up db`.
+# Host URLs after startup:
+#   Frontend   http://localhost:5173     (built bundle served by nginx — same
+#                                        host port as the Vite dev server, so the
+#                                        backend CORS allow-list is unchanged)
+#   API docs   http://localhost:8000/docs
+#   Mailpit    http://localhost:8025     (inbox; SMTP on localhost:1025)
+#
+# Usage (see Tutorial.md):
+#   make demo                     # build + start + migrate + seed (primary path)
+#   docker compose up --build     # the same thing without the Makefile niceties
+#   docker compose down -v        # stop and wipe ALL data (fresh-demo reset)
+#   docker compose exec db psql -U trace -d trace    # connect with psql
+#
+# Credentials come from `.env` (gitignored). Defaults are inlined with
+# ${VAR:-default} interpolation so a fresh checkout works with no manual steps.
 
 services:
   db:
@@ -32,22 +45,65 @@ services:
       timeout: 5s
       retries: 10
 
-  # Module 6 — local email catcher. Every email TRACE sends lands here;
-  # nothing in Phase 1 talks to a real SMTP relay.
+  backend:
+    build: ./backend
+    container_name: trace-backend
+    restart: unless-stopped
+    environment:
+      # Compose-network values — the repo `.env`'s `localhost` URLs are
+      # host-side only and must NOT reach the container.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-trace}:${POSTGRES_PASSWORD:-trace_local_password}@db:5432/${POSTGRES_DB:-trace}
+      JWT_SECRET: ${JWT_SECRET:-change-this-development-secret-0123456789-abcdef}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      UPLOAD_DIR: /app/uploads
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-smtp}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_FROM: ${SMTP_FROM:-no-reply@trace.local}
+    ports:
+      - "8000:8000"
+    volumes:
+      - trace_uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    # The entrypoint (backend/docker-entrypoint.sh) runs `alembic upgrade head`
+    # and the idempotent demo seed before starting uvicorn — migrations never
+    # need a manual step.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Module 8 decision: the frontend is served as a BUILT STATIC BUNDLE (nginx),
+  # not a Vite dev-server container. `docker compose up` is then the only
+  # prerequisite — no host node_modules, no `npm install` — which is the most
+  # reliable path for a demo from a clean checkout. See Review.md §Module 8.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    container_name: trace-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"   # nginx serves the bundle on the Vite dev port (CORS unchanged)
+
+  # Local email catcher — every TRACE email lands here; nothing in Phase 1
+  # talks to a real SMTP relay. Version pinned for demo reproducibility.
   #   Web UI:  http://localhost:8025   (the inbox)
-  #   SMTP:    localhost:1025          (host-side backend, Phase 1)
-  #            mailpit:1025            (compose-network backend, Module 8)
+  #   SMTP:    mailpit:1025            (backend container) / localhost:1025 (host)
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.30.7
     container_name: trace-mailpit
     restart: unless-stopped
     ports:
       - "8025:8025"   # web UI — host browser
-      - "1025:1025"   # SMTP — host (Phase 1) and compose network (Module 8)
+      - "1025:1025"   # SMTP — backend (compose network) and host tools
 
 volumes:
   trace_pgdata:
-  # Declared in Module 3 (Item Management storage). The backend service
-  # (Module 8) mounts this for the uploads volume; meanwhile
-  # LocalDiskStorage writes to backend/uploads/ on the host.
   trace_uploads:
