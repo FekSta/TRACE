@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 interface Props {
   open: boolean;
@@ -10,12 +10,17 @@ interface Props {
 }
 
 export default function Modal({ open, title, onClose, children, footer, wide = false }: Props) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
+    // Move focus into the dialog for keyboard users (basic a11y; a full
+    // focus trap is future work).
+    panelRef.current?.focus();
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
@@ -29,7 +34,9 @@ export default function Modal({ open, title, onClose, children, footer, wide = f
       }}
     >
       <div
-        className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[88vh] overflow-y-auto rounded-xl border border-line bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.18)]`}
+        ref={panelRef}
+        tabIndex={-1}
+        className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[88vh] overflow-y-auto rounded-xl border border-line bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.18)] outline-none`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

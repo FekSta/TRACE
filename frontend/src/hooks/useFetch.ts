@@ -5,6 +5,8 @@ interface FetchState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /** HTTP status of the failed response, when one was received */
+  errorStatus: number | null;
   reload: () => void;
 }
 
@@ -18,12 +20,22 @@ export function useFetch<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    // No token (e.g. right after logout) — nothing to fetch; avoid firing a
+    // pointless unauthenticated request that would 401 and re-trigger logout.
+    if (!token) {
+      setLoading(false);
+      setError(null);
+      setErrorStatus(null);
+      return;
+    }
     setLoading(true);
     setError(null);
+    setErrorStatus(null);
     (async () => {
       try {
         const d = await api.get<T>(path, token);
@@ -32,6 +44,7 @@ export function useFetch<T>(
         if (cancelled) return;
         if (isAuthFailure(err)) opts?.onUnauthorized?.();
         setError(err instanceof ApiError ? err.message : "Request failed");
+        setErrorStatus(err instanceof ApiError ? err.status : null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -44,5 +57,5 @@ export function useFetch<T>(
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
 
-  return { data, loading, error, reload };
+  return { data, loading, error, errorStatus, reload };
 }

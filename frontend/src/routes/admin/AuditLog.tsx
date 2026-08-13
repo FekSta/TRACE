@@ -17,7 +17,9 @@ export default function AuditLog() {
 
   if (audit.loading) return <Loading label="Loading audit log…" />;
 
-  const gap = audit.error !== null;
+  // Only a 404 means the read endpoint is genuinely missing (Module 8
+  // handoff); any other error is a real connectivity failure.
+  const gap = audit.errorStatus === 404;
   const entries = audit.data ?? [];
 
   return (
@@ -27,7 +29,14 @@ export default function AuditLog() {
         <p className="mt-1.5 text-sm text-muted">Every mutating action across the platform, as recorded by the AuditLog entity.</p>
       </div>
 
-      {gap ? (
+      {audit.errorStatus !== null && !gap ? (
+        <Card title="Audit trail">
+          <EmptyState
+            message={audit.error ?? "Could not load the audit log."}
+            hint="Check that the backend is running and you are signed in."
+          />
+        </Card>
+      ) : gap ? (
         <Card title="Audit trail">
           <EmptyState
             message="The audit log viewer isn't wired up yet."

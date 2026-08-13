@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { useAuth } from "../../lib/auth-context";
-import { portalForRole } from "../../lib/auth";
 
 export interface NavItem {
   id: string;
@@ -100,9 +99,4 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
   );
 }
 
-/** Where a logged-in user should land based on their role. */
-export function redirectForRole(role: string | undefined): string {
-  const portal = portalForRole(role);
-  if (!portal) return "/login";
-  return `/${portal}`;
-}
+
