@@ -266,6 +266,7 @@ a silent guess.
 - **No `GET /notifications` endpoint yet** — rows exist but nothing lists or marks them read (`IsRead` stays false). Module 7's portal needs the read/ack surface and should expose it (a small Notifications read route is the natural place).
 - **No notification preferences / opt-out** — every trigger emails unconditionally; per-user preferences are future work.
 - **No SMTP retry-on-failure** — a failed send is logged and dropped. Fine for a pilot against a local catcher; a retry/backoff or dead-letter is future work.
+- **A `Notification` row-write failure is also only logged** — if the row commit itself fails (DB error inside the background task's broad `except Exception`), the event is left without a row *and* without an email, with no retry. Email-failure resilience is proven (rows survive dead SMTP); row-write-failure resilience is a future concern.
 - **Match emails can multiply** — a new FoundItem scored against several matching LostItems fires one email per match (per both parties); at pilot scale this is fine, but it should be de-duplicated (e.g. digest) if demo volumes grow.
 - **Duplicate recipient edge case** — if the same user reported both the lost and the found item, the match trigger writes two rows and sends two identical emails to one address. Harmless, but a dedupe per (user, event) would be cleaner.
 - **BackgroundTask in-process** — SMTP sends compete with the event loop (same caveat as Module 4's matching); the 5-second smtplib timeout bounds the worst case.
