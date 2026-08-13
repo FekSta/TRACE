@@ -26,8 +26,9 @@ demo: ## Build, start, migrate and seed the full stack, then wait until ready
 	@echo "  API docs   http://localhost:8000/docs"
 	@echo "  Mailpit    http://localhost:8025"
 	@echo ""
-	@echo "Seeded logins:"
+	@echo "Seeded logins (see Tutorial.md):"
 	@echo "  ada@example.com      / SuperSecret1!   (User)"
+	@echo "  bob@example.com      / SuperSecret1!   (User)"
 	@echo "  officer@example.com  / TestPass123!    (Officer)"
 	@echo "  admin@example.com    / TestPass123!    (Administrator)"
 
