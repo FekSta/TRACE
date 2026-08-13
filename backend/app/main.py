@@ -12,6 +12,7 @@ Run (Phase 1, local):
 from fastapi import FastAPI
 
 from app.modules.auth.router import router as auth_router
+from app.modules.claims.router import router as claims_router
 from app.modules.items.router import router as items_router
 from app.modules.matching.router import router as matching_router
 
@@ -27,6 +28,7 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(items_router)
 app.include_router(matching_router)
+app.include_router(claims_router)
 
 
 @app.get("/health", tags=["system"], summary="Liveness probe")
