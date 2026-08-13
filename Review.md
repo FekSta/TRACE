@@ -354,3 +354,86 @@ a silent guess.
   page.
 - **No notifications read/ack surface** — `IsRead` stays false everywhere
   (unchanged Module 6 gap).
+
+---
+
+## Module 8 — Local demo kit (decided 2026-08-13)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **`frontend` is served as a BUILT STATIC BUNDLE (nginx), not a Vite dev-server container** | The issue itself prefers the built bundle when there is no strong reason not to, and there isn't one here: `docker compose up` becomes the only prerequisite — no host `node_modules`, no `npm install`, no HMR watcher churn — which is exactly the reliability a fresh-clone demo needs. The multi-stage Dockerfile (`npm ci` → `tsc -b && vite build` → `nginx:1.27-alpine`) bakes `VITE_API_URL=http://localhost:8000` in at build time. nginx listens on **5173** — the same host port as the Vite dev server — so the Module 7 CORS allow-list (`http://localhost:5173`) works with **zero backend changes**. Trade-off: a frontend change needs a rebuild (`docker compose up --build frontend`) instead of hot reload — acceptable for a demo; dev iteration still uses `npm run dev` on the host (§13.6). |
+| 2 | **Migrations-on-startup = a shell entrypoint** (`backend/docker-entrypoint.sh`) that runs `alembic upgrade head` (with a retry loop for the db-healthy race) before `uvicorn` | A startup hook (entrypoint) rather than a manual step is the only way `docker compose up` can be the entire workflow; a FastAPI lifespan event would also work but couples the app to migration duties, and an entrypoint keeps the app itself unchanged. The retry loop covers the case where the `db` healthcheck passes but the DNS/connection is briefly not ready (seen once during verification). The same entrypoint then runs `python seed.py` (decision 3). |
+| 3 | **Seeding runs automatically on EVERY backend container start, and the seed is idempotent** — categories upsert by name; demo users are refreshed (password/role/status reset to the documented values, so the printed credentials always work); demo items are inserted **only when both `lost_items` and `found_items` tables are empty** | Decision: automatic (not a separate `make seed` gate) because the demo must be presentation-ready the moment `make demo` returns, with zero manual steps. The empty-table guard is what makes re-runs safe: `make demo` again, `make seed` again, or `docker compose restart backend` all leave data untouched (verified: counts stay at 4 users / 4 categories / 3+3 items / 2 matches across re-runs). The refresh-on-existing-user rule means a judge can play with the system and the documented logins still work afterwards. `make seed` exists as an explicit re-run convenience. |
+| 4 | **The seed script runs the REAL matching module and asserts the expected pairs** | After inserting the demo items the seed calls `matching.service.run_matching_for_found_item` — the exact `BackgroundTask` runner the Items API uses — and then **raises** unless each deliberately-matching pair exists as a `Suggested` Match at/above `MATCH_THRESHOLD`. This is the Module 3/4 end-to-end regression check the milestone demands (a real `Suggested` Match via the real module, not an eyeballed similarity), and it fails the boot loudly if matching ever regresses. Both seeded pairs score **100.00** (identical category/location/date/description; threshold is 60.00). |
+| 5 | **One root `docker-compose.yml` with all four services; `db` healthcheck + `depends_on: condition: service_healthy`; mailpit pinned to `v1.30.7`; backend gets its own `/health` check** | Compose-file consolidation per the issue. The db healthcheck already existed; `backend` now waits on it. Mailpit was previously `:latest`; pinning to the verified-running version (v1.30.7) removes the “image changed since last demo” risk. The backend healthcheck is beyond the issue's letter but is what lets `make demo` (and `docker compose ps`) determine “ready” — the wait loop in the Makefile polls `GET /health`. |
+| 6 | **Compose-network env is explicit in the compose file** — `DATABASE_URL` built from the `POSTGRES_*` vars with host `db`, `SMTP_HOST: mailpit`, `UPLOAD_DIR: /app/uploads`; every var has a `${VAR:-default}` fallback | The repo `.env` (gitignored) holds host-side values (`localhost`, `SMTP_HOST=localhost`) that must NOT reach the container; composing the URL from the `POSTGRES_*` vars avoids that class of bug entirely, and the defaults keep a fresh checkout (no `.env`) working with zero manual steps. |
+| 7 | **Two commits for the two issues, kept bisectable** — issue 1 (compose + entrypoint) is its own branch; issue 2 (seed + Makefile) is a second branch on top | The milestone's own guidance: if `make demo` breaks later you can bisect between “the stack doesn't come up” (issue 1) and “the stack comes up but seeding failed” (issue 2). The entrypoint running the *old* Module-1 category seed on the issue-1 branch was intentional (bisect-friendly: seeding categories always worked; issue 2 only extends the seed with users/items/matching). |
+
+### Deviations
+
+- **Branched from the Module 7 tip, not `develop`** — same stacking practice as
+  Module 7 (Review.md §Module 7 decision 8): `develop` still lacks Modules 5–7
+  and no `origin/develop` exists, so branching from the Module-7 tip (which
+  contains everything) is the only correct base. Documented here, not a silent
+  guess.
+- **No backend application-code changes in this milestone.** The entrypoint
+  and Dockerfiles are new infra; `seed.py` grew (it is a script, not a module);
+  the FastAPI app, routers, services, and models are untouched. CORS is
+  unchanged because the built frontend is served on the already-allowed
+  `:5173` origin.
+- **`backend/.dockerignore` and `frontend/.dockerignore`** are new build-context
+  hygiene (keep `.venv`/`node_modules`/`uploads`/`.env` out of the images).
+- **The issue list left “vite dev server vs built bundle” open** — decided in
+  favour of the built bundle (decision 1), which is the option the issue itself
+  recommends.
+- **Seed script consolidated, not duplicated** — `backend/seed.py` was extended
+  in place (Module 1's category seed is the same file's first step), per the
+  “consolidate rather than duplicate” instruction.
+
+### Known gaps / risks into the offline smoke test & Module 9
+
+- **Cold-cache build time**: first `make demo` took ~3–6 min in verification
+  (backend pip install + frontend `npm ci`/`vite build`); subsequent runs are
+  seconds. The offline smoke test (next Module 8 issue) should keep this in
+  mind — the build needs the package registries the first time.
+- **Unpinned Python dependencies in the container** (`requirements.txt` uses
+  `>=`): a rebuild months later could resolve newer versions than the verified
+  ones (SQLAlchemy 2.0.52 / FastAPI 0.141.1 / psycopg 3.3.4 / bcrypt 5.0.0 /
+  PyJWT 2.13.0 on Python 3.14). Consistent with the project's existing
+  convention; freezing exact versions (or a lockfile) is a candidate hardening
+  before any judge-run or Module 9.
+- **Floating base-image tags**: `postgres:16-alpine`, `node:22-alpine`,
+  `nginx:1.27-alpine` move within their major versions. Only mailpit is pinned.
+  If reproducibility becomes critical, pin SHAs.
+- **The deliberately-matching pairs use fixed dates (2026-08-10/12)** — scoring
+  is purely relative (date *difference* between the pair), so any two dates
+  within 14 days of each other score identically; fixed dates keep the demo
+  deterministic.
+- **Seed-time notification emails are best-effort**: the match triggers fire
+  during backend startup, which can race mailpit's first boot. `Notification`
+  rows always persist (the durable record); emails appear in Mailpit when
+  mailpit is already up (in verification all 4 landed). If a demo shows an
+  empty inbox, the rows are still there — restart the stack or `make seed` to
+  re-fire.
+- **Host port conflicts**: if a host-side dev server (`npm run dev` on 5173,
+  or a host uvicorn on 8000) is still running, `docker compose up` fails on the
+  port bind — `Tutorial.md` covers stopping them. (This bit the clean-checkout
+  verification once; it is a host-environment issue, not a compose issue.)
+- **`make demo`'s wait loop uses `curl` on the host** — fine on macOS/Linux
+  dev boxes; on a minimal container-as-host it would need an alternative.
+- **Browser click-through was not verified** — Chrome is not installed in this
+  environment, so “logging into the frontend” was verified via the exact API
+  endpoints the SPA calls (login ×4 roles, list endpoints, matches, full
+  accept→approve→collect flow), consistent with the Module 7 precedent. A
+  human-in-the-browser pass is part of the offline smoke-test issue.
+- **Google Fonts load from the internet** at page render (index.html `<link>`s) —
+  the built app falls back to system fonts when offline; the offline smoke
+  test should note this cosmetic dependency.
+- **Seeded matches are consumed by the demo walkthrough**: accepting/verifying
+  the seeded backpack pair flips its statuses (Closed/Returned). Re-running
+  `make demo` will NOT resurrect consumed matches (item tables are non-empty,
+  so the seed skips items) — the documented reset is `make clean` (down -v)
+  then `make demo`. This is why the milestone's idempotency question has an
+  explicit answer in decision 3.
