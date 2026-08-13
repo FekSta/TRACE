@@ -1231,7 +1231,132 @@ even when the email cannot be delivered.
 
 ---
 
-## 13. Module status
+## 13. Frontend & Dashboard (Module 7)
+
+The React 19 SPA in `frontend/` consumes the Modules 2–6 API documented
+above. Unlike the earlier sections this one documents the app's
+**structure**, not a new API — the frontend is the API's consumer.
+
+### 13.1 Project structure
+
+| Path | Purpose |
+|---|---|
+| `frontend/src/routes/auth/` | Login / Register / RegisterSuccess / LoginSuccess — `demo/auth` identity |
+| `frontend/src/routes/user/` | User portal: dashboard, report lost/found (photo upload), matches, claims, notifications |
+| `frontend/src/routes/officer/` | Officer portal: dashboard, verify reports, review claims, collections, item status |
+| `frontend/src/routes/admin/` | Admin portal: summary, categories CRUD, reports, audit log |
+| `frontend/src/routes/guards.tsx` | `RequireRole` — portal gating from the decoded JWT role |
+| `frontend/src/components/layout/AppShell.tsx` | Shared sidebar + topbar shell for all three portals |
+| `frontend/src/components/ui/` | Shared design-system primitives (Button, Card, StatusBadge, StatCard, Modal, Field, Toast, …) |
+| `frontend/src/lib/auth.ts` | JWT storage + dependency-free decode (`Role` claim), `getAuthSession`, `portalForRole` |
+| `frontend/src/lib/auth-context.tsx` | Session context + logout |
+| `frontend/src/lib/api.ts` | Fetch wrapper — the only place HTTP happens |
+| `frontend/src/lib/types.ts` | TypeScript mirrors of the backend response schemas |
+| `frontend/src/hooks/useFetch.ts`, `useAuthedFetch.ts` | Fetching with loading/error/reload; logout on 401 |
+| `frontend/src/index.css` | Tailwind v4 `@theme` tokens — the design system's source of truth |
+
+### 13.2 Design system reference
+
+`demo/officer/style.css` is the **single source of visual truth** for all
+three portals. Its tokens were extracted into `src/index.css` `@theme`:
+
+| Token | Value | Officer source |
+|---|---|---|
+| `--color-brand` | `#008542` | `--green` |
+| `--color-brand-dark` | `#006d35` | `--green-dark` |
+| `--color-brand-light` | `#e8f5ed` | `--green-light` |
+| `--color-canvas` | `#f6f8fb` | `--bg` |
+| `--color-surface` / `--color-soft` | `#ffffff` / `#f1f5f9` | `--surface` / `--surface-soft` |
+| `--color-ink` / `--color-muted` | `#0b1c30` / `#667085` | `--text` / `--muted` |
+| `--color-line` | `#dbe1e7` | `--border` |
+| `--color-danger` / `--color-warning` | `#ba1a1a` / `#d97706` | `--danger` / `--warning` |
+| Fonts | Inter (body) + Manrope (display) | Google Fonts links in the demo |
+| Cards | radius 12px, shadow `0 2px 10px rgba(15,23,42,.05)` | `--radius` / `--shadow` |
+
+`StatusBadge.tsx` maps every backend status onto the officer badge palette
+(found/approved → green, lost → amber, pending → slate, rejected → red),
+and `src/components/ui/` implements the shared buttons, cards, modals and
+toast once — no per-portal CSS copies. Auth screens keep `demo/auth/`'s own
+identity (dark navy image side `#0f172a`, near-black primary `#111827`,
+amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
+
+### 13.3 Auth flow
+
+- **Login**: `POST /auth/login` → token stored in `localStorage` under
+  `trace.access_token`; the decoded `Role` claim is read back immediately
+  (LoginSuccess renders it — the issue-1 DoD artifact).
+- **Decode**: dependency-free `decodeToken`; `getAuthSession` enforces a
+  strict payload shape (valid numeric `exp` + `UserID`, known `Role`), so a
+  tampered payload cannot silently render privileged views.
+- **Routing**: `RequireRole` reads the role from the decoded token **only**
+  — no session → `/login`; wrong role for the URL → redirected to that
+  role's own portal. `Administrator` is a superset of `Officer` (may open
+  `/officer`, matching `is_staff`).
+- **Logout / expiry**: logout clears the token; any API 401/403 also logs
+  the user out. Expired tokens are detected client-side and cleared (no
+  refresh tokens in this milestone). Storage-choice trade-off documented in
+  `Review.md` §Module 7.
+
+### 13.4 Portal → endpoint map (and demo translation record)
+
+| Portal / screen | Endpoints used | Translated from |
+|---|---|---|
+| Login | `POST /auth/login` | `demo/auth/login.html` |
+| Register / RegisterSuccess | `POST /auth/register` | `demo/auth/register.html` + `register-successful.html` |
+| LoginSuccess | — (reads stored token) | `demo/auth/login-successful.html` |
+| User dashboard | `GET /items/lost`, `GET /items/found`, `GET /claims` | `demo/user/index.html` dashboard |
+| Report lost/found | `GET /categories`, `POST /items/lost|found`, `POST /items/{kind}/{id}/attachments` (photo, multipart) | `demo/user/` report pages |
+| My matches | `GET /matches`, `POST /matches/{id}/accept` (submits a claim), `POST /matches/{id}/reject` | `demo/user/` matches surface |
+| Track claims | `GET /claims` | `demo/user/` Track Claims |
+| Notifications | — (gap: no `GET /notifications` yet — see §13.5) | `demo/user/` bell icon |
+| Officer dashboard | `GET /items/lost`, `GET /items/found`, `GET /claims` | `demo/officer/` Dashboard |
+| Verify reports | `GET /items/lost|found`, `PATCH /items/{kind}/{id}`, `DELETE /items/{kind}/{id}` | `demo/officer/` Verify Reports |
+| Review claims | `GET /claims?verification_status=Pending`, `POST /claims/{id}/verify` | `demo/officer/` Review Claims |
+| Collections | `GET /claims?verification_status=Approved`, `POST /claims/{id}/collect` | `demo/officer/` Approve Collections |
+| Item status | `PATCH /items/{kind}/{id}` | `demo/officer/` Update Item Status |
+| Admin summary | `GET /items/lost`, `/items/found`, `/claims`, `/matches`, `/categories` (computed client-side) | none — officer extension (see §13.5) |
+| Categories | `GET /categories?include_archived=true`, `POST/PATCH/DELETE /categories` | `demo/UI/` Manage Categories (content only) |
+| Admin reports | — (gap: `GET /dashboard/reports` deferred) | `demo/UI/` Reports |
+| Audit log | — (gap: no `GET /audit-logs` yet) | none |
+
+> **Demo → real-API mismatches** (each flagged in `Review.md` §Module 7):
+> `demo/user/`'s standalone "Upload Photos" page folded into the report
+> forms (photos attach to items); `demo/officer/`'s "Verify/Reject report"
+> has no backing state — the real action is `PATCH` status / `DELETE`;
+> `demo/user/`'s map panel has no geodata behind it and is not faked.
+
+### 13.5 Documented gaps (deferred, not silently dropped)
+
+- **No `GET /notifications`** — Module 6 writes rows + emails only; the
+  User portal's Notifications view probes the route and shows an explained
+  gap panel when it 404s.
+- **No `GET /audit-logs`** — the Admin Audit Log view renders the same kind
+  of gap panel.
+- **`GET /dashboard/summary` + `GET /dashboard/reports`** (listed in the
+  Module 7 issue) were **deferred** — the milestone guardrail forbids new
+  backend endpoints this pass; the Admin summary is computed client-side.
+  All three are the Module 8 handoff.
+
+### 13.6 Local dev instructions
+
+```bash
+cd frontend
+npm install
+npm run dev            # http://localhost:5173
+```
+
+- `VITE_API_URL` defaults to `http://localhost:8000` (`.env` is gitignored;
+  `.env.example` is committed). The backend CORS-allows `http://localhost:5173`
+  (middleware added to `backend/app/main.py` in Module 7).
+- Test accounts: `ada@example.com` / `SuperSecret1!` (User),
+  `bob@example.com` / `SuperSecret1!` (User), `officer@example.com` /
+  `TestPass123!` (Officer), `admin@example.com` / `TestPass123!`
+  (Administrator). Self-registration always creates a User.
+- Typecheck + production build: `npm run build` (`tsc -b && vite build`).
+
+---
+
+## 14. Module status
 
 | Milestone | Status |
 |-----------|--------|
@@ -1242,5 +1367,6 @@ even when the email cannot be delivered.
 | Module 4 — Matching Engine | ✅ closed (see `issues/completed.md`) |
 | Module 5 — Claims & Verification | ✅ closed (see `issues/completed.md`) |
 | Module 6 — Notifications | ✅ closed (see `issues/completed.md`) |
-| Modules 7–8 | not started (per scope) |
+| Module 7 — Frontend & Dashboard | ✅ closed (see `issues/completed.md`) |
+| Module 8 — Local demo kit | not started (per scope) |
 | Module 9 — Cloud migration (optional) | not started |
