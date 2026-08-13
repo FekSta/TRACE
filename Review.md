@@ -270,3 +270,81 @@ a silent guess.
 - **Match emails can multiply** — a new FoundItem scored against several matching LostItems fires one email per match (per both parties); at pilot scale this is fine, but it should be de-duplicated (e.g. digest) if demo volumes grow.
 - **Duplicate recipient edge case** — if the same user reported both the lost and the found item, the match trigger writes two rows and sends two identical emails to one address. Harmless, but a dedupe per (user, event) would be cleaner.
 - **BackgroundTask in-process** — SMTP sends compete with the event loop (same caveat as Module 4's matching); the 5-second smtplib timeout bounds the worst case.
+
+---
+
+## Module 7 — Frontend & Dashboard (decided 2026-08-13)
+
+### Design-source decisions
+
+| # | Decision | Rationale |
+|---|---|---|
+| 1 | **`demo/officer/style.css` is the single shared design system** for all three portals; `demo/user/`'s CSS is **superseded** by it | Per the milestone brief. The User mockup informed *what* the User portal shows and does (action cards, stats, activity table), but its separate `style.css` was not translated — those layout ideas were rebuilt on the officer tokens (via `frontend/src/index.css` `@theme` + `src/components/ui/`). |
+| 2 | **Admin portal is an extension of the officer system** (no mockup existed) | Layout decisions in the absence of a mockup: reuse the officer AppShell 1:1 (same sidebar/topbar), officer-style stat cards for the summary, officer tables for category management, and explained gap panels for Reports and Audit Log. Nothing new visually was invented. |
+| 3 | **`demo/UI/` is legacy/secondary** — pulled for *content* only | Per the brief it is not a third design language to reconcile. What was pulled: the admin "Manage Categories" table and "Reports" page *concepts*, restyled on officer tokens. Its Material-3 palette/surfaces were not adopted; where it conflicts with `demo/auth/` or `demo/officer/`, those two win. |
+| 4 | **React-TS template** | Team default per the issue text; matches the fully-typed backend. |
+| 5 | **JWT stored in `localStorage`** (not in-memory + refresh) | Trade-off: persistence survives page refresh (a demo/refresh doesn't log you out) at the cost of greater XSS exposure. Mitigations: no refresh tokens exist (Module 2 scope), the backend re-validates every call (any 401 logs the user out), the token expires in 60 min, and `getAuthSession` shape-checks the payload so tampered tokens don't render privileged views. In-memory would be safer against XSS but logs out on every refresh — the wrong trade for a pilot. |
+| 6 | **CORS middleware added to `backend/app/main.py`** — a user-approved deviation from "no backend changes in this pass" | A browser SPA cannot call `http://localhost:8000` cross-origin without it, and the issue mandates `VITE_API_URL=http://localhost:8000`. Added as `CORSMiddleware` (6 lines; no new routes) allowing only `http://localhost:5173` (+ 127.0.0.1); Module 8/9 hosting extends the list. This is infra plumbing, not an API-surface change. |
+| 7 | **Issue-listed Dashboard endpoints deferred** (`GET /dashboard/summary`, `GET /dashboard/reports`) | The milestone guardrail ("do not add new backend endpoints in this pass") outranks the issue's task list. The Admin summary is computed client-side from the existing list endpoints; the Reports page documents the gap. This is the explicit Module 8 handoff. |
+| 8 | **Frontend branches stacked on the Module 6 tip**, not `develop` | `develop` still lacks the Claims/Notifications modules (Modules 5–6 unmerged); the SPA needs the full API surface. Same stacking practice as Modules 5–6. |
+
+### Mockup ↔ real-API mismatches (flagged, not silently dropped)
+
+- **`demo/user/`'s standalone "Upload Photos" page has no backing screen** —
+  the real API attaches photos to an item
+  (`POST /items/{kind}/{id}/attachments`), so photo upload was folded into
+  the report forms instead.
+- **`demo/officer/`'s "Verify/Reject report" has no backing endpoint** — the
+  model has no per-report verified state. The real analog is updating the
+  item's status (`PATCH /items/{kind}/{id}`) or removing the report
+  (`DELETE`), which is what the Verify Reports page does.
+- **`demo/user/`'s map panel** — no geodata exists in the model; the
+  dashboard shows stats + a recent-activity table instead (not faked).
+- **Match/claim cards show item IDs, not titles** — the real
+  `MatchResponse`/`ClaimResponse` carry only foreign keys; My Matches
+  resolves titles from the user's own item lists where possible.
+- **Demo dates/names are static** — the SPA renders live API data.
+
+### Verification notes
+
+- **Issue 1 DoD**: `npm run dev` served the Tailwind-styled app (HTTP 200;
+  `--color-brand: #008542` token and a compiled `.bg-brand` utility present
+  in the served CSS). The decoded `Role` claim was read from a stored real
+  token three ways: the console debug log on login, the LoginSuccess claims
+  panel, and a node-level test of the compiled `auth.ts` against live logins
+  for all three roles. A tampered payload (no valid `exp`/`Role`) yields
+  `null` from `getAuthSession` (bug found by this test and fixed).
+- **Issue 2 DoD**: portal selection is driven entirely by the decoded JWT
+  role (`RequireRole` in `routes/guards.tsx` — wrong role bounces to the
+  correct portal; no/tampered token → `/login`). Core flows verified against
+  the local backend: (a) the compiled `api.ts` wrapper exercised live
+  (logins ×3, all list endpoints, category CRUD, user→403 role gate, and the
+  `/notifications` + `/audit-logs` 404s the gap views handle); (b) the full
+  curl flow — register → report + photo upload → match → accept (claim
+  created) → approve → collect (items Closed/Returned, claim Completed) →
+  reject path (claim Rejected/Cancelled, items back to Reported/Available,
+  re-verify 400). Cross-role calls with a User token return 403; no token
+  returns 401.
+- **Caveat**: Chrome is not installed in this environment, so the DoD was
+  verified via the dev server, compiled-module tests against the live API,
+  and curl flows rather than a browser-automation run.
+
+### Known gaps / risks into Module 8 (Local demo kit)
+
+- **`GET /notifications` and `GET /audit-logs` do not exist** — the User
+  "Notifications" view and the Admin "Audit Log" view render explained gap
+  panels; adding the read routes (a small Notifications read route + a
+  Dashboard module with summary/reports/audit-log) is the first Module 8
+  handoff, alongside the issue-listed `GET /dashboard/summary` and
+  `GET /dashboard/reports`.
+- **No React tests** — verification was typecheck/build + live-API tests; a
+  Vitest suite is future work.
+- **No offline handling / PWA** — online-first per `ABOUT.md`.
+- **Basic loading/error states only** — no skeletons or retry UI beyond
+  `useFetch`'s reload.
+- **Photo upload UX is basic** — single file, no preview or progress bar.
+- **Per-portal page state is in-memory** — each portal tracks its active
+  page in state (like the mockup); refresh/deep-link resets to the first
+  page.
+- **No notifications read/ack surface** — `IsRead` stays false everywhere
+  (unchanged Module 6 gap).
