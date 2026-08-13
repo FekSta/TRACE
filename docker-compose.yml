@@ -1,12 +1,12 @@
 # TRACE — local development stack (Phase 1, 100% local)
 #
-# This file currently defines only the `db` service (Postgres). Later
-# milestones add `backend`, `frontend`, and `mailpit`
-# (see issues/Trace_isses.md — Module 8 assembles all four).
+# Services so far: `db` (Postgres, Module 1) and `mailpit` (local email
+# catcher, Module 6). Module 8 assembles the full four-service stack by
+# adding `backend` and `frontend`.
 #
 # Usage:
-#   docker compose up db        # start Postgres (fresh from a clean checkout)
-#   docker compose down -v      # stop and wipe data (back to fresh state)
+#   docker compose up -d db mailpit   # start Postgres + Mailpit
+#   docker compose down -v            # stop and wipe data (back to fresh state)
 #   docker compose exec db psql -U trace -d trace   # connect with psql
 #
 # Credentials come from .env (gitignored). Defaults are inlined with
@@ -31,6 +31,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Module 6 — local email catcher. Every email TRACE sends lands here;
+  # nothing in Phase 1 talks to a real SMTP relay.
+  #   Web UI:  http://localhost:8025   (the inbox)
+  #   SMTP:    localhost:1025          (host-side backend, Phase 1)
+  #            mailpit:1025            (compose-network backend, Module 8)
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: trace-mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"   # web UI — host browser
+      - "1025:1025"   # SMTP — host (Phase 1) and compose network (Module 8)
 
 volumes:
   trace_pgdata:
