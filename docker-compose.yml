@@ -55,9 +55,13 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-trace}:${POSTGRES_PASSWORD:-trace_local_password}@db:5432/${POSTGRES_DB:-trace}
       JWT_SECRET: ${JWT_SECRET:-change-this-development-secret-0123456789-abcdef}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
-      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      # Phase-1 backends are PINNED (not ${VAR:-default} interpolated): a stray
+      # Phase-2 value in the host .env (e.g. EMAIL_BACKEND=resend) would crash
+      # the container at import and brick the demo. Phase 2 switches these via
+      # a compose override instead.
+      STORAGE_BACKEND: local
       UPLOAD_DIR: /app/uploads
-      EMAIL_BACKEND: ${EMAIL_BACKEND:-smtp}
+      EMAIL_BACKEND: smtp
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       SMTP_FROM: ${SMTP_FROM:-no-reply@trace.local}
