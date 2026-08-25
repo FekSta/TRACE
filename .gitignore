@@ -29,3 +29,6 @@ backend/uploads/*
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Issues local drafts
+issues/Trace_isses.md
