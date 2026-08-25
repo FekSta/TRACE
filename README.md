@@ -1,9 +1,41 @@
-# 🧭 TRACE
+<div align="center">
+    <img src="/assets/logos/trace-logo.png" alt="TRACE logo" width="400" height="250">
+</div>
 
-> **T**racking, **R**ecovery, **A**nd **C**laim **E**ngine
-> A centralized platform for reporting, tracking, matching, and recovering lost and found items across campuses, businesses, and public organizations.
+<h1 align="center">TRACE</h1>
 
-*"Every lost item leaves a trace."*
+<p align="center">
+    <b>T</b>race <b>R</b>ecovery <b>A</b>nd <b>C</b>laim <b>E</b>ngine. 
+    <em>"Every lost item leaves a trace."</em>
+</p>
+
+
+<p align="center">
+  <a href="#-overview">Overview</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-services">Services(Modules)</a> •
+  <a href="#-tech-stack">Tech Stack</a> •
+  <a href="#-getting-started">Getting Started</a> •
+  <a href="#-development">Development</a> •
+  <a href="#-api">API</a> •
+  <a href="#-contributing">Contributing</a>
+</p>
+
+<p align="center">
+    <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+    <img src="https://img.shields.io/badge/React-19.2.0-61DAFB?logo=react&logoColor=black" alt="React">
+    <img src="https://img.shields.io/badge/FastAPI-0.135.3-009688?logo=fastapi&logoColor=white" alt="FastAPI">
+</p>
+
+<p align="center">
+    <img src="https://img.shields.io/badge/PostgreSQL-18+-316192?logo=postgresql&logoColor=white" alt="PostgreSQL">
+    <img src="https://img.shields.io/badge/Celery-6.0.5-37814A?logo=celery&logoColor=white" alt="Celery">
+    <img src="https://img.shields.io/badge/Docker_Compose-Ready-2496ED?logo=docker&logoColor=white" alt="Docker Compose">
+    <img src="https://img.shields.io/badge/GitHub_Actions-CI-2088FF?logo=githubactions&logoColor=white" alt="GitHub Actions">
+</p>
+
+
 
 ---
 
@@ -125,15 +157,15 @@ The result is a faster, more transparent, and more efficient recovery process.
 
 # 🔄 Request Flow
 
-User submits a lost item report through the application.
+1. User submits a lost item report through the application.
 Item details are stored in the database.
-Matching algorithm scans reported lost items against found item records.
+2. Matching algorithm scans reported lost items against found item records.
 Potential match identified based on similarity criteria.
-User is notified of the potential match.
+3. User is notified of the potential match.
 User submits an ownership claim for the matched item.
-Administrator reviews the ownership claim and supporting evidence.
+4. Administrator reviews the ownership claim and supporting evidence.
 Claim approved after successful verification.
-User collects the verified item from the designated location.
+5. User collects the verified item from the designated location.
 Case is marked as closed and archived in the system.
 
 ---
@@ -455,3 +487,9 @@ These capabilities transform the application into a comprehensive Lost & Found M
 TRACE modernizes the management of lost property by combining intelligent matching, workflow automation, reporting, notifications, and role-based administration into a scalable web application.
 
 Its emphasis on business logic, algorithms, security, reporting, and automation makes it an excellent CMPG223 project that goes well beyond the requirements of a traditional CRUD application.
+
+---
+# Contributions
+## Team
+- [MOEKETSI FEKEFEKE](https://github.com/FekSta)
+-
