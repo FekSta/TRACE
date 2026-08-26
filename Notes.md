@@ -54,7 +54,7 @@ cloud services. The Module 0 sketch exercise (see `issues/completed.md`) circles
 |---|------|-----------------|-----------------|----------------------|
 | 1 | **Database connection** | Docker Postgres on `localhost:5432` (`DATABASE_URL` in `.env`) | Supabase-hosted Postgres | Only the `DATABASE_URL` value changes; the same SQLAlchemy models and Alembic migrations run unchanged against Supabase |
 | 2 | **File storage** | `LocalDiskStorage` writing into a Docker-mounted `uploads/` volume | `SupabaseStorage` | Both implement the same `StorageBackend` interface (`save`, `get_url`, `delete`); the active implementation is selected by the `STORAGE_BACKEND` env var |
-| 3 | **Email** | `SmtpEmailBackend` pointed at local Mailpit (SMTP `:1025`, web UI `:8025`) | `ResendEmailBackend` | Both implement the same `EmailBackend` interface (`send`); the active implementation is selected by the `EMAIL_BACKEND` env var |
+| 3 | **Email** | `SmtpEmailBackend` pointed at local Mailpit (SMTP `:1025`, web UI `:8025`) — **implemented in Module 6** | `ResendEmailBackend` (Module 9) | Both implement the same `EmailBackend` interface (`send`); the active implementation is selected by the `EMAIL_BACKEND` env var |
 
 **What does NOT change between Phase 1 and Phase 2:**
 
@@ -1092,7 +1092,146 @@ curl -s -X POST http://localhost:8000/claims/$CLAIM/collect -H "Authorization: B
 
 ---
 
-## 12. Module status
+## 12. Notifications & Email API (Module 6)
+
+The Notifications module (`backend/app/modules/notifications/`) delivers the
+single V1 notification channel — **email** (`ABOUT.md`) — for match, claim,
+and collection events, and persists a `Notification` row per event. It is
+triggered by **direct in-process calls** from the Matching and Claims modules
+(no message queue, never HTTP between modules), and its email plumbing
+mirrors Module 3's `StorageBackend` interface/adapter pattern exactly.
+
+### 12.1 `EmailBackend` interface (mirrors `StorageBackend`)
+
+`backend/app/modules/notifications/email_backend.py`:
+
+- **Interface**: `EmailBackend.send(to, subject, body)` — the only email
+  entry point in TRACE. Trigger code calls the shared `email_backend`
+  singleton and never talks to SMTP directly, just as Items calls
+  `storage.save(...)` and never touches the filesystem.
+- **Implementation**: `SmtpEmailBackend(host, port, from_address)` using
+  `smtplib` (stdlib — no new dependency).
+- **Configuration** (from `.env`, defaults in `config.py`):
+
+  | Var | Default | Meaning |
+  |---|---|---|
+  | `EMAIL_BACKEND` | `smtp` | Selects the active implementation (`smtp` now; `resend` in Module 9) |
+  | `SMTP_HOST` | `localhost` | `localhost` for the host-side backend (Phase 1); `mailpit` for the Module 8 container on the compose network |
+  | `SMTP_PORT` | `1025` | Mailpit's SMTP port |
+  | `SMTP_FROM` | `no-reply@trace.local` | Envelope From address |
+
+- **Zero-external-calls guarantee**: Phase 1 config resolves to loopback only
+  (`localhost:1025`) — no external relay is ever contacted. Verified by
+  pointing `SMTP_PORT` at a dead port and confirming the app logs the send
+  failure and keeps running.
+- **Module 9 swap**: `ResendEmailBackend` is added behind the same interface;
+  switching `EMAIL_BACKEND=resend` + new env vars is the *only* change — no
+  trigger code is touched.
+
+### 12.2 Trigger table
+
+All triggers run via `FastAPI BackgroundTask` (or inside Module 4's matching
+background runners) — never in the request path, so creation/approval
+responses never wait on email.
+
+| # | Event | Call site | `NotificationType` | Email subject (recipient) |
+|---|---|---|---|---|
+| 1 | New `Suggested` match | `matching/service.py` runners (per created match) | `Match` | "TRACE: a potential match was found" (**both** the lost-item reporter and the finder) |
+| 2 | Claim submitted | `matching/router.py` accept endpoint (BackgroundTask) | `Claim` | "TRACE: your claim was submitted" (claimant) |
+| 3 | Claim **approved** | `claims/router.py` verify endpoint (BackgroundTask) | `Claim` | "TRACE: your claim was approved" (claimant) |
+| 4 | Item ready for collection | `claims/router.py` verify endpoint, on approve (BackgroundTask) | `Claim` | "TRACE: your item is ready for collection" (claimant) |
+| 5 | Claim **rejected** | `claims/router.py` verify endpoint (BackgroundTask) | `Claim` | "TRACE: your claim was rejected" + officer notes (claimant) |
+
+Interpretation note: "item ready for collection" is fired together with
+"claim approved" — once a claim is approved the FoundItem is ready to be
+handed over (see `Review.md` §Module 6). Collecting the item itself does not
+fire an email in this milestone (out of the four-event scope).
+
+### 12.3 `Notification` row reference
+
+Each trigger writes a `notifications` row with `user_id` (recipient),
+`title`, `message`, and `notification_type`; `is_read` defaults `false` and
+`created_at` is the server timestamp (per `Entities.md`).
+
+**Rows are independent of email delivery.** Each trigger commits its
+`Notification` row(s) *before* attempting the SMTP send; a send failure is
+caught and logged (`email send to <to> failed (notification row already
+persisted)`) and never rolls the row back. Verified concretely: with
+`SMTP_PORT=9999` (dead), accepting a match still returned `200` in ~0.07 s
+and the `Claim submitted` + `Match` rows were persisted with zero emails
+delivered.
+
+### 12.4 Local testing
+
+```bash
+# 1. Mailpit (and Postgres) up, inbox at http://localhost:8025
+docker compose up -d db mailpit
+
+# 2. backend on the host with the default smtp config
+cd backend && .venv/bin/uvicorn app.main:app --port 8000
+
+# 3. trigger each event (see §11.7 for the full claim sequence):
+#    - new match:      create a LostItem and a matching FoundItem
+#    - claim submitted: POST /matches/{id}/accept
+#    - approved/ready:  POST /claims/{id}/verify {"result":"Approved"}
+#    - rejected:        POST /claims/{id}/verify {"result":"Rejected","notes":"..."}
+```
+
+Watch `http://localhost:8025` — every TRACE email lands there (or inspect
+programmatically via `GET http://localhost:8025/api/v1/messages`).
+
+### 12.5 Quick end-to-end test sequence (check Mailpit after each step)
+
+```bash
+# login as claimant, finder, officer (tokens from §8)
+TA=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+TB=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"bob@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+TO=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"officer@example.com","password":"TestPass123!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# step 1: report a lost item + register the matching found item
+# -> Mailpit: 2 x "a potential match was found" (one to ada, one to bob)
+LOST=$(curl -s -X POST http://localhost:8000/items/lost -H "Authorization: Bearer $TA" \
+  -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Blue Sony headphones","description":"Blue Sony wireless headphones with black carrying case","date_lost":"2026-08-12","location_lost":"Library"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+FOUND=$(curl -s -X POST http://localhost:8000/items/found -H "Authorization: Bearer $TB" \
+  -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Blue Sony headphones","description":"Blue Sony wireless headphones with black carrying case","date_found":"2026-08-12","storage_location":"Library"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+sleep 2
+
+# step 2: accept the suggested match -> claim created
+# -> Mailpit: "your claim was submitted" (to ada)
+MID=$(curl -s -H "Authorization: Bearer $TA" http://localhost:8000/matches \
+  | python3 -c "import sys,json;ms=[m for m in json.load(sys.stdin) if m['lost_item_id']==$LOST and m['found_item_id']==$FOUND];print(ms[0]['id'])")
+curl -s -X POST http://localhost:8000/matches/$MID/accept -H "Authorization: Bearer $TA"
+CLAIM=$(curl -s -H "Authorization: Bearer $TA" http://localhost:8000/claims \
+  | python3 -c "import sys,json;cs=[c for c in json.load(sys.stdin) if c['lost_item_id']==$LOST];print(cs[0]['id'])")
+
+# step 3: officer approves
+# -> Mailpit: "your claim was approved" + "your item is ready for collection" (to ada)
+curl -s -X POST http://localhost:8000/claims/$CLAIM/verify -H "Authorization: Bearer $TO" \
+  -H 'Content-Type: application/json' -d '{"result":"Approved","notes":"ID matched"}'
+
+# reject path (fresh pair):
+# -> Mailpit: "your claim was rejected" (to ada)
+curl -s -X POST http://localhost:8000/claims/$CLAIM/verify -H "Authorization: Bearer $TO" \
+  -H 'Content-Type: application/json' -d '{"result":"Rejected","notes":"could not verify ownership"}'
+```
+
+Each `Notification` row is queryable alongside the email:
+`SELECT * FROM notifications ORDER BY id;` — one row per trigger, present
+even when the email cannot be delivered.
+
+---
+
+## 13. Module status
 
 | Milestone | Status |
 |-----------|--------|
@@ -1102,5 +1241,6 @@ curl -s -X POST http://localhost:8000/claims/$CLAIM/collect -H "Authorization: B
 | Module 3 — Item Management | ✅ closed (see `issues/completed.md`) |
 | Module 4 — Matching Engine | ✅ closed (see `issues/completed.md`) |
 | Module 5 — Claims & Verification | ✅ closed (see `issues/completed.md`) |
-| Modules 6–8 | not started (per scope) |
+| Module 6 — Notifications | ✅ closed (see `issues/completed.md`) |
+| Modules 7–8 | not started (per scope) |
 | Module 9 — Cloud migration (optional) | not started |

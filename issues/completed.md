@@ -237,3 +237,40 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 **Commits:**
 - `feat: add claim verify endpoint with transactional status cascade`
 - `feat: add claim collect endpoint and CollectionRecord`
+
+---
+
+## [Module 6] Add `mailpit` service to docker-compose.yml
+
+**Closed:** 2026-08-13
+**Branch:** `chore/add-mailpit-service`
+**Definition of done met:** `docker compose up -d mailpit` started the `trace-mailpit` container cleanly (healthy), `http://localhost:8025/` served Mailpit's inbox UI (HTTP 200), and a manual test email sent via Python `smtplib` to `localhost:1025` appeared in Mailpit's store (confirmed via `GET /api/v1/messages`, the same API the web UI renders).
+
+**Files committed:**
+- `docker-compose.yml` (`mailpit` service: SMTP `1025`, web UI `8025`; header comment updated)
+
+**Commits:**
+- `chore: add mailpit service to docker-compose.yml`
+
+---
+
+## [Module 6] `EmailBackend` interface + `SmtpEmailBackend` implementation
+
+**Closed:** 2026-08-13
+**Branches:** `feature/email-backend-smtp`, `feature/notification-triggers`
+**Definition of done met:** a claim approval produced **both** a `Notification` row in Postgres and a visible email in Mailpit — with zero external network calls (the SMTP host/port in use resolve to loopback `localhost:1025`, i.e. the local `mailpit` service; confirmed by config inspection). All four triggers verified end to end via curl: new Match suggested → 2 emails (both parties) + 2 rows; Claim submitted → 1 email + 1 row; Claim approved → "approved" + "ready for collection" emails + 2 rows; Claim rejected → 1 email + 1 row. Row/email decoupling proven by pointing `SMTP_PORT` at a dead port: the request still returned `200` in ~0.07 s, `Notification` rows were persisted, zero emails delivered, and the three send failures were caught and logged.
+
+**Files committed:**
+- `backend/app/config.py` (`EMAIL_BACKEND`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`)
+- `backend/app/modules/notifications/__init__.py`
+- `backend/app/modules/notifications/email_backend.py` (`EmailBackend`, `SmtpEmailBackend`, `email_backend` singleton)
+- `backend/app/modules/notifications/service.py` (`notify_match_suggested`, `notify_claim_submitted`, `notify_claim_verified`)
+- `backend/app/modules/matching/service.py` (runners fire `notify_match_suggested`)
+- `backend/app/modules/matching/router.py` (accept fires `notify_claim_submitted` BackgroundTask)
+- `backend/app/modules/claims/router.py` (verify fires `notify_claim_verified` BackgroundTask)
+- `.env.example` (SMTP host duality comment)
+
+**Commits:**
+- `feat: add EmailBackend interface and SmtpEmailBackend`
+- `feat: add notification trigger service and match-suggested wiring`
+- `feat: wire claim notification triggers into accept and verify endpoints`

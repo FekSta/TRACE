@@ -237,3 +237,36 @@ a silent guess.
 - **`claim.collection_date` is set explicitly** (`datetime.now(timezone.utc)`) rather than via `server_default` — consistent with the model, but worth noting for any future audit of "when did collection happen".
 - **No claim PATCH/DELETE** — officers cannot edit or void a claim outside the workflow; Module 7's officer portal should use verify/collect only.
 - **`create_from_match` is idempotent per (lost, found) pair but not per Match** — a retried accept on an already-accepted Match is blocked by the Module 4 `409` guard anyway, so the pair-idempotency is a belt-and-braces safety net.
+
+---
+
+## Module 6 — Notifications (decided 2026-08-13)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **`FastAPI BackgroundTask`, not a queue** — every trigger registers a background task (or runs inside Module 4's existing matching background runners); email delivery never sits in the request path | `ABOUT.md` allows no message queue and mandates in-process calls; the single campus pilot has no durability/backpressure needs, and Module 4 already proved the pattern. Verified empirically: with SMTP deliberately dead, accepting a match still returned `200` in ~0.07 s — the email attempt happens after the response. |
+| 2 | **"Item ready for collection" = the moment a claim is approved** — the FoundItem is then reserved for the claimant and ready to be handed over; the approve path fires **two** notifications ("claim approved" + "item ready for collection") | `TRACE_Issues.md` lists "item ready for collection" without a definition; the issue body itself suggests the claim-approved interpretation and it matches the demo flow (approve → user collects). An alternative (a separate email at `POST /claims/{id}/collect`) would fire *after* the item is already handed over, which is too late to be useful. |
+| 3 | **`Notification` rows are decoupled from email sends**: each trigger commits its row(s) first, then attempts `email_backend.send(...)` inside a `try/except` that logs and swallows failures | The row is the durable record — it must exist even if Mailpit/Resend is down. Verified by pointing `SMTP_PORT` at a dead port: rows persisted, zero emails delivered, three send failures logged, app healthy, `health` still 200. |
+| 4 | **`EmailBackend` mirrors `StorageBackend` exactly**: interface + `SmtpEmailBackend` + a shared `email_backend` singleton selected by `EMAIL_BACKEND`; call sites use only the singleton | Same Phase 1/2 seam discipline as storage (Notes §2): Module 9 adds `ResendEmailBackend` behind the interface and flips an env var — trigger code is untouched. `EMAIL_BACKEND` defaults to `smtp` and raises on unknown values so a mis-set env var fails loudly at boot, not silently at send time. |
+| 5 | **Recipients: new-match emails go to *both* parties; claim emails go to the claimant only** | Both item owners care about a potential match (the demo's "wow" and genuinely useful). Claim outcomes concern the claimant; notifying "all officers" needs a role query and is deliberately left out of this milestone (see gaps). |
+| 6 | **Email content is plain text** (subject + body) via `smtplib`/`email.message` | `EmailBackend.send(to, subject, body)` keeps the interface trivial and the Resend adapter trivial too (Resend takes the same three strings); HTML/attachments are future work. |
+
+### Deviations
+
+- **None from `Entities.md`** — the `Notification` model (existing since Milestone 1) is used as-is: `NotificationType` enum (`Match`/`Claim`/`Reminder`/`System`), `IsRead` default false, FK to `User`. No schema changes.
+- **No email for the collect step** (`POST /claims/{id}/collect`) — the four-event list in `TRACE_Issues.md` does not include it, and decision 2 interprets "ready for collection" as the approval moment. A "returned/complete" email is a candidate for a later milestone.
+- **No `Reminder`/`System` type usage** — only `Match` and `Claim` are produced by the four events; the other two enum values stay available.
+- **`Notification.IsRead` is never set** — nothing reads notifications yet (no UI); Module 7 adds the read/listing surface.
+- **`EMAIL_BACKEND`/`SMTP_*` vars added to `.env` and `.env.example`** — `SMTP_HOST` default is `localhost` (host-side Phase 1 backend); `.env.example` documents the `mailpit` compose-network value for Module 8, mirroring the `DATABASE_URL` localhost-vs-db convention.
+
+### Known gaps / risks into Module 7 (Frontend)
+
+- **No `GET /notifications` endpoint yet** — rows exist but nothing lists or marks them read (`IsRead` stays false). Module 7's portal needs the read/ack surface and should expose it (a small Notifications read route is the natural place).
+- **No notification preferences / opt-out** — every trigger emails unconditionally; per-user preferences are future work.
+- **No SMTP retry-on-failure** — a failed send is logged and dropped. Fine for a pilot against a local catcher; a retry/backoff or dead-letter is future work.
+- **A `Notification` row-write failure is also only logged** — if the row commit itself fails (DB error inside the background task's broad `except Exception`), the event is left without a row *and* without an email, with no retry. Email-failure resilience is proven (rows survive dead SMTP); row-write-failure resilience is a future concern.
+- **Match emails can multiply** — a new FoundItem scored against several matching LostItems fires one email per match (per both parties); at pilot scale this is fine, but it should be de-duplicated (e.g. digest) if demo volumes grow.
+- **Duplicate recipient edge case** — if the same user reported both the lost and the found item, the match trigger writes two rows and sends two identical emails to one address. Harmless, but a dedupe per (user, event) would be cleaner.
+- **BackgroundTask in-process** — SMTP sends compete with the event loop (same caveat as Module 4's matching); the 5-second smtplib timeout bounds the worst case.
