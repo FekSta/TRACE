@@ -29,28 +29,28 @@ in-process function calls.
 **Rationale:** Modern SQLAlchemy 2.0 requires type annotations for `mapped_column`
 when primary arguments are absent. This is the current recommended pattern.
 
-### 2.2 UUID Primary Keys (not Integer)
-**Decision:** All 11 entities use UUID primary keys, generated server-side via
-`gen_random_uuid()`.
-**Rationale:** `assets/diagrams/data-model.md` specifies "UUID / Integer" for all
-PKs. UUIDs were chosen because:
-- They avoid ID conflicts if the system ever runs multiple replicas
-- They make API IDs safe for external consumers (no sequential leaking)
-- Postgres 16 has native `gen_random_uuid()` — zero application overhead
+### 2.2 Integer Primary Keys (not UUID)
+**Decision:** All 11 entities use integer auto-increment primary keys via
+`Identity()`. The shared `Base` class lives in `app/models/base.py`.
+**Rationale:** Integer PKs are simpler, work well with ORMs, and are appropriate
+for an internal system. `Identity()` delegates ID generation to the database,
+avoiding application-level UUID generation overhead.
 
 ### 2.3 Native Postgres ENUMs (not VARCHAR with CHECK constraints)
-**Decision:** Enum values (`Role`, `Status`, `LostItemStatus`, etc.) are modeled
-as native Postgres ENUMs via SQLAlchemy's `Enum()` type.
+**Decision:** Enum values (`UserRole`, `UserStatus`, `LostItemStatus`, etc.) are
+modeled as native Postgres ENUMs via SQLAlchemy's `Enum()` type with
+`values_callable` to store the exact value strings.
 **Rationale:**
 - Type-safe at the database level — invalid values cannot be inserted
 - Matches the enum semantics in `Entities.md` exactly
+- Centralized in `app/models/enums.py` for reuse across models
 - Trade-off: adding new enum values requires a migration (acceptable for V1)
 
 ### 2.4 Alembic revision naming convention
 **Decision:** Migration filenames use Alembic's default auto-generated format
 (`<revision>_<slug>.py`).
 **Rationale:** No team convention exists yet; default is sufficient. First
-migration: `ff0a486902ce_initial_schema_all_11_entities.py`.
+migration: `f0b8febaf3b9_initial_schema_all_11_entities.py`.
 
 ### 2.5 Package structure: single `models/` package
 **Decision:** All 11 models live in `backend/app/models/`, not one package per module.
@@ -64,14 +64,25 @@ Alembic and seed scripts. FastAPI will use an async engine at runtime.
 **Rationale:** Alembic does not support async engines. The sync/async split
 is a standard SQLAlchemy pattern.
 
+### 2.7 Plural table names
+**Decision:** All tables use plural names (`users`, `lost_items`, `claims`, etc.)
+**Rationale:** Plural table names are the conventional SQL naming style and
+match the target schema in the TRACE repo.
+
+### 2.8 Centralized enums module
+**Decision:** All enums live in `app/models/enums.py` rather than being defined
+individually in each model file.
+**Rationale:** Centralized definitions prevent duplication, ensure consistency,
+and make enum imports straightforward across the codebase.
+
 ---
 
 ## 3. Deviations from Specification
 
 ### None
 All entity definitions, attribute names, types, enum values, and FK
-relationships match `assets/diagrams/data-model.md` exactly. No silent
-guesses were made. The only interpretive decisions are:
+relationships match `Entities.md` exactly. No silent guesses were made.
+The only interpretive decisions are:
 
 - **`ondelete` behavior:** Not specified in `Entities.md`. Chose:
   - `CASCADE` for owned entities (User → items, Claim → records)
@@ -103,11 +114,9 @@ guesses were made. The only interpretive decisions are:
    Indexes on status columns should be added when query patterns are
    established in Module 3.
 
-5. **`Attachment` table has no FK to a specific item/claim row.**
-   `RelatedEntity` + `related_entity_id` would be cleaner than the current
-   `related_entity` enum alone. However, `Entities.md` does not include a
-   `related_entity_id` column, so the Attachment table is a reference-only
-   entity for now — actual linking will be implemented when file uploads
-   are built in Module 3.
+5. **`Attachment` table links to entities via `entity_id` (integer).**
+   The `RelatedEntity` enum + `entity_id` column provides a polymorphic link
+   to the related row. Actual FK enforcement is application-level since
+   a single column cannot reference multiple tables.
 
 6. **No `dashboard` module yet.** Dashboard endpoints are Milestone 7.
