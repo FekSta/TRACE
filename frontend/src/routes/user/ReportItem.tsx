@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import { useToast } from "../../components/ui/Toast";
 import { api, ApiError } from "../../lib/api";
@@ -18,7 +18,6 @@ interface Props {
 export default function ReportItem({ kind, onDone }: Props) {
   const { show } = useToast();
   const categories = useAuthedFetch<Category[]>("/categories");
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<Record<string, string>>({});
   const [photo, setPhoto] = useState<File | null>(null);
@@ -127,7 +126,6 @@ export default function ReportItem({ kind, onDone }: Props) {
           <div className="sm:col-span-2">
             <Field label="Photo (optional)">
               <input
-                ref={fileRef}
                 type="file"
                 accept="image/*"
                 onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}

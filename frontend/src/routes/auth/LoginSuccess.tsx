@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../lib/auth-context";
 import { getAuthSession, portalForRole, type AuthSession } from "../../lib/auth";
 
 /**
@@ -9,6 +10,7 @@ import { getAuthSession, portalForRole, type AuthSession } from "../../lib/auth"
  */
 export default function LoginSuccess() {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [countdown, setCountdown] = useState(0);
 
@@ -75,7 +77,7 @@ export default function LoginSuccess() {
             {portalForRole(session.payload.Role) ? ` (${session.payload.Role} portal)` : ""}
           </button>
           <button
-            onClick={() => navigate("/login")}
+            onClick={() => { logout(); navigate("/login"); }}
             className="mt-3 inline-flex items-center justify-center gap-2 rounded-[10px] border border-gray-300 bg-transparent px-4 py-3.5 font-semibold text-auth-ink transition hover:bg-gray-50"
           >
             Sign Out
@@ -87,7 +89,10 @@ export default function LoginSuccess() {
             </p>
           )}
           <p className="mt-2 text-[0.85rem] text-muted">
-            Not your account? <Link to="/login" className="font-semibold text-auth-amber hover:underline">Log out</Link>
+            Not your account?{" "}
+            <button onClick={() => { logout(); navigate("/login"); }} className="font-semibold text-auth-amber hover:underline">
+              Log out
+            </button>
           </p>
         </section>
 

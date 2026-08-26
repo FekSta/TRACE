@@ -39,6 +39,10 @@ export default function Categories() {
   }
 
   async function save() {
+    if (!form.category_name.trim()) {
+      show("Category name is required", "error");
+      return;
+    }
     setBusy(true);
     try {
       const body = {

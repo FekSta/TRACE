@@ -304,6 +304,12 @@ a silent guess.
   `MatchResponse`/`ClaimResponse` carry only foreign keys; My Matches
   resolves titles from the user's own item lists where possible.
 - **Demo dates/names are static** — the SPA renders live API data.
+- **Register's password rule is stricter than the API** — the mockup's
+  `auth.js` requires a letter *and* a digit (min 8 chars), while the
+  backend enforces only `min_length 8` (Notes.md §8). Kept mockup-faithful:
+  the client rule is strictly stronger, so no user can register a password
+  the API would later reject — but it does mean "password" (8 letters)
+  can't be chosen even though the API would accept it.
 
 ### Verification notes
 

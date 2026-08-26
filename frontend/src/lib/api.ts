@@ -6,8 +6,6 @@
 
 const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-export const apiBaseUrl = API_URL;
-
 export class ApiError extends Error {
   status: number;
 

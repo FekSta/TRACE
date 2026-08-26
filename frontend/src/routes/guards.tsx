@@ -8,12 +8,6 @@ import { portalForRole } from "../lib/auth";
  * role claim (never a hardcoded flag). No valid session → /login. Wrong
  * role for the URL → bounced to that role's own portal.
  */
-export function RequireAuth({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
-  if (!session) return <Navigate to="/login" replace />;
-  return <>{children}</>;
-}
-
 export function RequireRole({ roles, children }: { roles: string[]; children: ReactNode }) {
   const { session } = useAuth();
   if (!session) return <Navigate to="/login" replace />;

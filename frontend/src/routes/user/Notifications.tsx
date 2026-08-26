@@ -19,7 +19,10 @@ export default function Notifications() {
 
   if (notifications.loading) return <Loading label="Loading notifications…" />;
 
-  const gap = notifications.error !== null;
+  // Only a 404 means the read endpoint is genuinely missing (the documented
+  // Module 6 gap). Any other error is a real connectivity failure and is
+  // shown as such rather than being mislabeled as the gap.
+  const gap = notifications.errorStatus === 404;
   const list = notifications.data ?? [];
 
   return (
@@ -31,7 +34,14 @@ export default function Notifications() {
         </p>
       </div>
 
-      {gap ? (
+      {notifications.errorStatus !== null && !gap ? (
+        <Card title="Notification inbox">
+          <EmptyState
+            message={notifications.error ?? "Could not load notifications."}
+            hint="Check that the backend is running and you are signed in."
+          />
+        </Card>
+      ) : gap ? (
         <Card title="Notification inbox">
           <EmptyState
             message="This inbox isn't wired up yet."
