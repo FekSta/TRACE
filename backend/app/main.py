@@ -10,6 +10,7 @@ Run (Phase 1, local):
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.modules.auth.router import router as auth_router
 from app.modules.claims.router import router as claims_router
@@ -23,6 +24,17 @@ app = FastAPI(
         "(Phase 1, fully local)."
     ),
     version="0.2.0",
+)
+
+# Browser CORS for the Phase 1 React SPA (Vite dev server on :5173). Added in
+# Module 7 — a one-way allowance for the dev origin only; Module 8/9's hosted
+# frontend will extend this list. Not an API-surface change (no new routes).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth_router)

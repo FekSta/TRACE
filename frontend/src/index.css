@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+/* ============================================================
+   TRACE design tokens — extracted from demo/officer/style.css
+   (the single shared design system across User / Officer /
+   Admin portals; see Notes.md §13 "Design system reference").
+   ============================================================ */
+@theme {
+  /* Typography — Inter (body) + Manrope (display), as in the demo */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Manrope", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Brand palette (officer --green) */
+  --color-brand: #008542;
+  --color-brand-dark: #006d35;
+  --color-brand-light: #e8f5ed;
+
+  /* Surfaces */
+  --color-canvas: #f6f8fb; /* officer --bg */
+  --color-surface: #ffffff;
+  --color-soft: #f1f5f9; /* officer --surface-soft */
+
+  /* Text & lines */
+  --color-ink: #0b1c30; /* officer --text */
+  --color-muted: #667085;
+  --color-line: #dbe1e7; /* officer --border */
+
+  /* Semantics */
+  --color-danger: #ba1a1a;
+  --color-warning: #d97706;
+
+  /* Shape & elevation */
+  --radius-card: 12px;
+  --shadow-card: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+
+/* Auth screens keep the demo/auth visual identity — dark navy image
+   side, near-black primary button, amber accents (scoped to auth) */
+@theme {
+  --color-auth-ink: #111827;
+  --color-auth-navy: #0f172a;
+  --color-auth-amber: #d97706;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+}
+
+/* Material Symbols (demo icon font) */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  line-height: 1;
+  vertical-align: middle;
+  user-select: none;
+}
+
+/* Thin, muted scrollbar to match the demo look */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 50px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
