@@ -274,3 +274,48 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 - `feat: add EmailBackend interface and SmtpEmailBackend`
 - `feat: add notification trigger service and match-suggested wiring`
 - `feat: wire claim notification triggers into accept and verify endpoints`
+
+---
+
+## [Module 7] React 19 + Vite + Tailwind scaffold, JWT decode
+
+**Closed:** 2026-08-13
+**Branch:** `feature/vite-tailwind-scaffold`
+**Definition of done met:** `npm run dev` served the Tailwind-styled app (HTTP 200; the `--color-brand: #008542` token and a compiled `.bg-brand` utility were present in the served CSS), and the decoded `Role` claim was readable from the stored token — proven via the login console debug log, the LoginSuccess claims panel, and a node-level test of the compiled `auth.ts` against live logins for all three roles (User/Officer/Administrator).
+
+**Files committed:**
+- `backend/app/main.py` (CORSMiddleware for the Vite dev origin — user-approved deviation)
+- `frontend/.env.example`, `frontend/vite.config.ts`, `frontend/index.html`, `frontend/src/index.css` (officer `@theme` tokens), `frontend/public/*`
+- `frontend/src/lib/auth.ts` (JWT storage + decode), `frontend/src/lib/api.ts` (fetch wrapper)
+- `frontend/src/App.tsx`, `frontend/src/routes/auth/Login.tsx`, `frontend/src/routes/auth/LoginSuccess.tsx`
+
+**Commits:**
+- `chore: enable CORS for the frontend dev server`
+- `feat: scaffold React 19 + Vite + Tailwind frontend`
+- `feat: add JWT storage/decode and API client`
+- `feat: translate demo auth login flow into React`
+
+---
+
+## [Module 7] User / Officer / Admin portals
+
+**Closed:** 2026-08-13
+**Branch:** `feature/user-officer-admin-portals`
+**Definition of done met:** portal selection is driven entirely by the decoded JWT `Role` claim (`RequireRole` guards — wrong role bounces to the correct portal; no/tampered token → `/login`), and each portal's core flows were verified against the local backend: the full curl sequence (register → report + photo upload → match → accept → claim → approve → collect → Closed/Returned/Completed; reject path → Rejected/Cancelled with items back to Reported/Available; re-verify → 400), the compiled `api.ts` wrapper exercised live (logins ×3, all list endpoints, category CRUD, user→403 role gate, and the `/notifications` + `/audit-logs` 404s the gap views handle), and cross-role 403 / no-token 401.
+
+**Files committed:**
+- `frontend/src/components/layout/AppShell.tsx`, `frontend/src/components/ui/*` (Button, Card, StatusBadge, StatCard, Modal, Field, EmptyState, Loading, Toast)
+- `frontend/src/lib/auth-context.tsx`, `frontend/src/lib/types.ts`
+- `frontend/src/hooks/useFetch.ts`, `frontend/src/hooks/useAuthedFetch.ts`
+- `frontend/src/routes/guards.tsx`, `frontend/src/routes/auth/Register.tsx`, `frontend/src/routes/auth/RegisterSuccess.tsx`
+- `frontend/src/routes/user/*` (dashboard, report lost/found + photos, matches, claims, notifications)
+- `frontend/src/routes/officer/*` (dashboard, verify reports, review claims, collections, status)
+- `frontend/src/routes/admin/*` (summary, categories CRUD, reports, audit log)
+- `frontend/README.md`
+
+**Commits:**
+- `feat: add officer-styled shared UI layer and authed fetch hooks`
+- `feat: wire register flow and role-gated portal routing`
+- `feat: build user portal`
+- `feat: build officer portal`
+- `feat: build admin portal as an extension of the officer system`
