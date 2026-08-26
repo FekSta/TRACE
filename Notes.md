@@ -259,13 +259,98 @@ Postgres enum types store the exact `Entities.md` value spellings (case-sensitiv
 
 ---
 
-## 5. Local database (`docker compose up db`)
+## 5. Running the full stack (Module 8 demo kit)
 
-Phase 1 uses a local Postgres 16 container defined by the `db` service in the
-root `docker-compose.yml`. No cloud account involved.
+Since Module 8 the **whole system** (database + backend + frontend + email)
+comes up with **one command** from a clean checkout. Migrations run
+automatically on backend startup and the demo data is seeded automatically —
+there is no manual `alembic upgrade head`, no `npm install`, no `.env` to
+write.
+
+### 5.1 One-command startup
 
 ```bash
-docker compose up db          # start the db service (fresh Postgres, empty)
+make demo          # build + start + migrate + seed + wait (primary path)
+# …or the equivalent without make:
+docker compose up --build
+```
+
+What happens: `docker compose up --build` builds the four images (first run
+only — roughly 3–6 min: backend pip install + frontend `npm ci`/`vite build`;
+later runs are seconds), starts `db` first (the backend waits on its
+`pg_isready` healthcheck), then the backend container entrypoint runs
+`alembic upgrade head` **and** the idempotent demo seed before starting
+uvicorn. `make demo` additionally waits for `GET /health` and prints the URLs
+and logins below.
+
+Each service ends up listening on:
+
+| Service | Host URL | Notes |
+|---------|----------|-------|
+| **frontend** | http://localhost:5173 | built React bundle served by nginx (not a dev server) |
+| **backend API** | http://localhost:8000 | FastAPI — interactive docs at `/docs`, liveness at `/health` |
+| **db** | localhost:5432 | Postgres 16 (`trace`/`trace`/`trace_local_password`) |
+| **mailpit** | http://localhost:8025 | email inbox; SMTP on localhost:1025 |
+
+### 5.2 Seeded accounts
+
+`backend/seed.py` creates one account per role (all `Active`, passwords
+bcrypt-hashed by the app itself). **These are the logins to present in a
+demo:**
+
+| Role | Email | Password |
+|------|-------|----------|
+| User (lost items reported here) | `ada@example.com` | `SuperSecret1!` |
+| User (found items registered here) | `bob@example.com` | `SuperSecret1!` |
+| Officer | `officer@example.com` | `TestPass123!` |
+| Administrator | `admin@example.com` | `TestPass123!` |
+
+### 5.3 Seeded data
+
+After a fresh `make demo` the database contains:
+
+- **4 categories** — Electronics, Bags, Clothes, Documents & Cards.
+- **3 lost items** (reported by `ada`) — *Black Nike backpack* (Bags),
+  *Blue Sony headphones* (Electronics), *Silver laptop* (Electronics).
+- **3 found items** (registered by `bob`) — *Black Nike backpack* (Bags),
+  *Blue Sony headphones* (Electronics), *Red Nike jacket* (Clothes).
+- **2 `Suggested` Matches, both scored 100.00** — the *deliberately-matching
+  pairs*: `Black Nike backpack ↔ Black Nike backpack` and
+  `Blue Sony headphones ↔ Blue Sony headphones` (identical
+  category/location/date/description, so they clear the Module 4 threshold of
+  60.00). Everything else is intentionally non-matching (different category or
+  thin overlap), so a fresh demo shows exactly these two suggestions.
+- **4 notifications + 4 emails** — the match triggers fire `notify_match_suggested`
+  (one row + one Mailpit email per party), so Mailpit is pre-populated.
+
+**Confirm the matches yourself** (the seed already asserts them, but here is
+the API check):
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"officer@example.com","password":"TestPass123!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/matches
+# -> two matches, each { "match_score": "100.00", "status": "Suggested" }
+```
+
+### 5.4 Makefile targets
+
+| Target | What it does |
+|--------|--------------|
+| `make demo` | **Build + start + migrate + seed + wait for `/health`** — the one command |
+| `make seed` | Re-run the idempotent seed against the running stack (safe any time) |
+| `make up` / `make down` | Start / stop the stack (data volume preserved) |
+| `make clean` | Stop and **wipe all data** (`docker compose down -v`) — fresh-demo reset |
+| `make logs` / `make ps` | Follow logs / show service status |
+
+### 5.5 The `db` service in isolation (focused debugging)
+
+The per-service commands from earlier milestones still work for focused
+debugging, but `make demo` is now the primary path:
+
+```bash
+docker compose up -d db      # just the database (empty unless already seeded)
 docker compose ps             # status — `db` should report (healthy)
 docker compose down -v        # stop and wipe the data volume (fresh start)
 ```
@@ -302,6 +387,11 @@ Migrations live in `backend/alembic/` and are generated from the models in
 `backend/alembic.ini`. Host-side tools run from `backend/` using the venv
 (`backend/.venv`, gitignored).
 
+> **Module 8:** in the dockerized stack you never run `alembic upgrade head`
+> yourself — the backend container entrypoint (`backend/docker-entrypoint.sh`)
+> runs it (plus the seed) automatically on every start. Host-side Alembic is
+> only needed when authoring new migrations.
+
 ```bash
 # One-time setup (per checkout)
 cd backend
@@ -337,6 +427,10 @@ cd backend
 ---
 
 ## 7. Quick verification sequence
+
+> **Module 8:** for the full-stack equivalent of this, just run `make demo` —
+> it migrates AND seeds automatically. This section is the DB-layer-only
+> sequence (migration + seed against a bare `db`), for focused debugging.
 
 Copy-paste commands proving DB + models + migration + seed all work together
 (mirrors `api.md`'s "quick end-to-end test sequence" — no GUI needed; `psql`
@@ -525,7 +619,7 @@ def list_things(
 ### 8.6 Quick end-to-end test sequence
 
 ```bash
-# 0. prerequisites (from §5 and §6): docker compose up db; venv ready
+# 0. prerequisites (from §5.5 and §6): docker compose up -d db; venv ready
 cd backend
 .venv/bin/uvicorn app.main:app --port 8000 &   # start the API
 
@@ -1165,6 +1259,8 @@ delivered.
 
 ```bash
 # 1. Mailpit (and Postgres) up, inbox at http://localhost:8025
+#    (Module 8: the whole stack is already up after `make demo`; this is the
+#    host-side variant for focused debugging)
 docker compose up -d db mailpit
 
 # 2. backend on the host with the default smtp config
@@ -1339,10 +1435,15 @@ amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
 
 ### 13.6 Local dev instructions
 
+**Quickest path (Module 8 demo kit):** `make demo` from the repo root serves
+the *built* bundle at http://localhost:5173 — no `npm install`, no dev server.
+
+**Iterating on the frontend only:**
+
 ```bash
 cd frontend
 npm install
-npm run dev            # http://localhost:5173
+npm run dev            # http://localhost:5173 (replaces the containerized build)
 ```
 
 - `VITE_API_URL` defaults to `http://localhost:8000` (`.env` is gitignored;
@@ -1368,5 +1469,5 @@ npm run dev            # http://localhost:5173
 | Module 5 — Claims & Verification | ✅ closed (see `issues/completed.md`) |
 | Module 6 — Notifications | ✅ closed (see `issues/completed.md`) |
 | Module 7 — Frontend & Dashboard | ✅ closed (see `issues/completed.md`) |
-| Module 8 — Local demo kit | not started (per scope) |
+| Module 8 — Local demo kit | **in progress** — root compose ✅, seed + `make demo` ✅ (see `issues/completed.md`); offline smoke test + `Tutorial.md` follow-through is the remaining issue |
 | Module 9 — Cloud migration (optional) | not started |

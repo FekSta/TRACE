@@ -319,3 +319,36 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 - `feat: build user portal`
 - `feat: build officer portal`
 - `feat: build admin portal as an extension of the officer system`
+
+---
+
+## [Module 8] Complete root docker-compose.yml (all 4 services)
+
+**Closed:** 2026-08-13
+**Branch:** `chore/root-docker-compose`
+**Definition of done met:** `docker compose up --build` from a genuinely clean checkout — a fresh `git clone` into an empty directory with no `.env`, no `node_modules`, no `.venv`, and the `trace_pgdata` volume removed — brought up all four services with zero manual intervention: `trace-db` (healthy), `trace-backend` (healthy, `GET /health` → `{"status":"ok"}`, `/docs` 200), `trace-frontend` (nginx serving the built TRACE bundle on :5173, 200), `trace-mailpit` (web UI 200). The backend entrypoint ran `alembic upgrade head` automatically (`alembic current` = `60ec8bad202b` head; all 11 tables + `alembic_version` present in a fresh DB) — no manual migration step anywhere.
+
+**Files committed:**
+- `docker-compose.yml` (all four services: `db` + healthcheck, `backend` with `depends_on: condition: service_healthy` + migration-on-startup entrypoint + `/health` check, `frontend` built-bundle nginx on :5173, `mailpit` pinned to `v1.30.7`; `trace_pgdata` + `trace_uploads` volumes)
+- `backend/Dockerfile` (python:3.14-slim), `backend/docker-entrypoint.sh` (alembic-with-retry + seed + uvicorn), `backend/.dockerignore`
+- `frontend/Dockerfile` (multi-stage: `npm ci` → `tsc -b && vite build` → `nginx:1.27-alpine`), `frontend/nginx.conf` (SPA fallback + hashed-asset caching on :5173), `frontend/.dockerignore`
+
+**Commits:**
+- `chore: consolidate services into root docker-compose.yml`
+- `chore: add healthchecks and migration-on-startup entrypoint`
+
+---
+
+## [Module 8] Seed script + `make demo` target
+
+**Closed:** 2026-08-13
+**Branch:** `chore/seed-script-make-demo`
+**Definition of done met:** `make demo` alone, from a clean checkout, produced a fully populated, ready-to-present system, verified live: 4 users seeded with the documented roles and credentials (ada/bob Users, officer, admin — all `Active`; API logins for all four return JWTs with the correct `Role` claim), 4 categories, 3 lost + 3 found items, and **both deliberately-matching pairs confirmed as real `Suggested` Matches via `GET /matches`** — `Black Nike backpack ↔ Black Nike backpack` and `Blue Sony headphones ↔ Blue Sony headphones`, both `match_score 100.00` (threshold 60.00), with the human-readable reasons. The seed itself runs the real matching module and asserts the pairs (fails loudly on regression). Idempotency proven: re-running `make seed` and restarting the backend container left counts unchanged (4 users / 4 categories / 3+3 items / 2 matches — no duplicates). The full Report → Match → Accept → Claim → Verify → Collect flow then completed on top of the seeded data (items → Closed/Returned, claim → Completed, 7 emails in Mailpit). Browser click-through not performed (no Chrome in this environment) — logins and flows were exercised via the exact API endpoints the SPA calls.
+
+**Files committed:**
+- `backend/seed.py` (extended in place: categories upsert + demo users with refresh + demo items gated on empty tables + matching-run-and-verify)
+- `Makefile` (`make demo` = up --build -d + wait for `/health` + print URLs/logins; plus `seed`, `up`, `down`, `clean`, `logs`, `ps`)
+
+**Commits:**
+- `feat: add demo seed script with matching pair`
+- `chore: add Makefile with make demo target`
