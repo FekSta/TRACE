@@ -398,12 +398,16 @@ a silent guess.
   (backend pip install + frontend `npm ci`/`vite build`); subsequent runs are
   seconds. The offline smoke test (next Module 8 issue) should keep this in
   mind — the build needs the package registries the first time.
-- **Unpinned Python dependencies in the container** (`requirements.txt` uses
-  `>=`): a rebuild months later could resolve newer versions than the verified
-  ones (SQLAlchemy 2.0.52 / FastAPI 0.141.1 / psycopg 3.3.4 / bcrypt 5.0.0 /
-  PyJWT 2.13.0 on Python 3.14). Consistent with the project's existing
-  convention; freezing exact versions (or a lockfile) is a candidate hardening
-  before any judge-run or Module 9.
+- **Python dependency versions: RESOLVED (2026-08-13).** `requirements.txt` is
+  now a pip-compiled **lockfile** (`backend/requirements.in` is the
+  human-readable spec) with all 31 packages pinned `==` to the exact set
+  installed in the verified demo image — proven byte-for-byte: installing the
+  lock in a scratch venv and a rebuilt container both `pip freeze` IDENTICALLY
+  to the original image. The base image is pinned too (`python:3.14.6-slim`).
+  **Caveat**: hash-pinning (`pip-compile --generate-hashes`) was attempted but
+  this environment could not complete the hash-download step (repeated 10-min
+  timeouts), so the lock is version-pinned only, not hash-verified. Re-adding
+  `--generate-hashes` on a healthier network is a trivial follow-up.
 - **Floating base-image tags**: `postgres:16-alpine`, `node:22-alpine`,
   `nginx:1.27-alpine` move within their major versions. Only mailpit is pinned.
   If reproducibility becomes critical, pin SHAs.
