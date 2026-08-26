@@ -7,7 +7,7 @@ in-process call from the Matching module's accept-match endpoint
 Officer/Admin verify workflow.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from app.modules.claims.schemas import (
 )
 from app.modules.claims.service import collect_claim, get_scoped_claim, verify_claim
 from app.modules.items.service import is_staff
+from app.modules.notifications.service import notify_claim_verified
 
 router = APIRouter(tags=["claims"])
 
@@ -65,6 +66,7 @@ def _get_claim_or_404(db: Session, claim_id: int) -> Claim:
 def verify_claim_endpoint(
     claim_id: int,
     body: ClaimVerifyRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(
         require_role(UserRole.OFFICER, UserRole.ADMINISTRATOR)
     ),
@@ -82,6 +84,9 @@ def verify_claim_endpoint(
     Errors: ``403`` for non-Officer callers, ``404`` unknown claim,
     ``400`` claim not Pending/Active (e.g. already verified, completed, or
     cancelled), ``422`` invalid body (e.g. ``result: "Pending"``).
+
+    The claim-approved/rejected (+ ready-for-collection) notifications fire
+    as a `BackgroundTask` after the response (Module 6).
     """
     claim = _get_claim_or_404(db, claim_id)
     verify_claim(
@@ -94,6 +99,7 @@ def verify_claim_endpoint(
     )
     db.commit()
     db.refresh(claim)
+    background_tasks.add_task(notify_claim_verified, claim.id)
     return claim
 
 

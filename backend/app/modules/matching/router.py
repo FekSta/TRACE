@@ -12,7 +12,7 @@
   transaction, so they commit (or roll back) together.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from app.modules.claims.service import create_from_match
 from app.modules.items.service import is_staff
 from app.modules.matching.schemas import MatchResponse
 from app.modules.matching.service import get_scoped_match
+from app.modules.notifications.service import notify_claim_submitted
 
 router = APIRouter(tags=["matching"])
 
@@ -90,6 +91,7 @@ def _resolve_match(
 @router.post("/matches/{match_id}/accept", response_model=MatchResponse)
 def accept_match(
     match_id: int,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Match:
@@ -97,12 +99,15 @@ def accept_match(
 
     The Claim is created via a direct in-process call to
     ``claims.service.create_from_match`` (Module 5 issue 1). Match status + Claim
-    + Claim-creation AuditLog commit in one transaction.
+    + Claim-creation AuditLog commit in one transaction. The "claim submitted"
+    notification (Module 6) fires as a `BackgroundTask` after the response, so
+    accepting never waits on email delivery.
     """
     match = _resolve_match(match_id, MatchStatus.ACCEPTED, current_user, db)
-    create_from_match(db, match, actor=current_user)
+    claim = create_from_match(db, match, actor=current_user)
     db.commit()
     db.refresh(match)
+    background_tasks.add_task(notify_claim_submitted, claim.id)
     return match
 
 

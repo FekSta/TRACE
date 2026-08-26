@@ -14,7 +14,10 @@ Two moving parts:
    everything. Cross-user access returns 404, never 403.
 
 All matching is a direct in-process call against the shared database — no
-message queue, no HTTP between modules (`ABOUT.md`).
+message queue, no HTTP between modules (`ABOUT.md`). Each new `Suggested`
+match also fires a notification (Module 6) via a direct in-process call to
+``notifications.service.notify_match_suggested`` — still inside this
+background runner, so item creation never blocks on it either.
 """
 
 import logging
@@ -28,6 +31,7 @@ from app.models import FoundItem, LostItem, Match, User
 from app.models.enums import FoundItemStatus, LostItemStatus, MatchStatus
 from app.modules.items.service import is_staff  # reuse Module 3 role logic
 from app.modules.matching.utils.similarity import MATCH_THRESHOLD, score_pair
+from app.modules.notifications.service import notify_match_suggested
 
 logger = logging.getLogger(__name__)
 
@@ -59,28 +63,30 @@ def _existing_match(db: Session, lost_id: int, found_id: int) -> Match | None:
     )
 
 
-def _run_matching(db: Session, lost_items: list[LostItem], found_items: list[FoundItem]) -> int:
+def _run_matching(
+    db: Session, lost_items: list[LostItem], found_items: list[FoundItem]
+) -> list[Match]:
     """Score every lost/found pair and persist `Suggested` matches above threshold.
 
-    Returns the number of Match rows created.
+    Returns the list of Match rows created (so callers can fire the Module 6
+    notifications for each new suggestion).
     """
-    created = 0
+    created: list[Match] = []
     for lost in lost_items:
         for found in found_items:
             if _existing_match(db, lost.id, found.id) is not None:
                 continue
             result = score_pair(_to_lost_dict(lost), _to_found_dict(found))
             if result.score >= MATCH_THRESHOLD:
-                db.add(
-                    Match(
-                        lost_item_id=lost.id,
-                        found_item_id=found.id,
-                        match_score=result.score,
-                        match_reason=result.reason,
-                        status=MatchStatus.SUGGESTED,
-                    )
+                match = Match(
+                    lost_item_id=lost.id,
+                    found_item_id=found.id,
+                    match_score=result.score,
+                    match_reason=result.reason,
+                    status=MatchStatus.SUGGESTED,
                 )
-                created += 1
+                db.add(match)
+                created.append(match)
     db.commit()
     return created
 
@@ -101,7 +107,9 @@ def run_matching_for_lost_item(lost_item_id: int) -> None:
             ).all()
         )
         created = _run_matching(db, [lost_item], found_items)
-        logger.info("matching: lost item %s -> %s new matches", lost_item_id, created)
+        for match in created:
+            notify_match_suggested(match.id)
+        logger.info("matching: lost item %s -> %s new matches", lost_item_id, len(created))
     except Exception:  # pragma: no cover - background task must not crash the app
         logger.exception("matching: failed for lost item %s", lost_item_id)
     finally:
@@ -124,7 +132,9 @@ def run_matching_for_found_item(found_item_id: int) -> None:
             ).all()
         )
         created = _run_matching(db, lost_items, [found_item])
-        logger.info("matching: found item %s -> %s new matches", found_item_id, created)
+        for match in created:
+            notify_match_suggested(match.id)
+        logger.info("matching: found item %s -> %s new matches", found_item_id, len(created))
     except Exception:  # pragma: no cover - background task must not crash the app
         logger.exception("matching: failed for found item %s", found_item_id)
     finally:
