@@ -3,26 +3,16 @@ Notification entity — Supporting Layer.
 
 Stores notifications sent to users for matches, claims, and workflow updates.
 
-See: assets/diagrams/data-model.md § 7. Notification
+See: Entities.md § 7. Notification
 """
 
-import enum
-import uuid
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Identity, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base
-
-
-class NotificationType(str, enum.Enum):
-    """Types of notifications sent to users."""
-    Match = "Match"
-    Claim = "Claim"
-    Reminder = "Reminder"
-    System = "System"
+from backend.app.models.enums import NotificationType, NotificationTypeType
 
 
 class Notification(Base):
@@ -33,33 +23,28 @@ class Notification(Base):
     and general system messages.
 
     Attributes:
-        id: Primary key (UUID)
+        id: Primary key (integer, auto-increment)
         user_id: FK → User — recipient
         title: Notification title
-        message: Notification content
+        message: Notification content (nullable)
         notification_type: Match, Claim, Reminder, or System
         is_read: Whether the user has read it
         created_at: Date created
     """
 
-    __tablename__ = "notification"
+    __tablename__ = "notifications"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        "notification_id",
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=func.gen_random_uuid(),
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("user.user_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
+    id: Mapped[int] = mapped_column(Identity(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    message: Mapped[str] = mapped_column(Text, nullable=False)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notification_type: Mapped[NotificationType] = mapped_column(
-        Enum(NotificationType), nullable=False, default=NotificationType.System
+        NotificationTypeType, default=NotificationType.SYSTEM
     )
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[Optional[str]] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[Optional[str]] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="notifications")

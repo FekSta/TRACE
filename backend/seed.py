@@ -2,7 +2,7 @@
 Seed script for TRACE database.
 
 Seeds the Category table with the 4 starter categories defined in
-assets/diagrams/data-flow.md § 2:
+Entities.md:
 
   1. Electronics
   2. Bags
@@ -24,7 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select
 
 from backend.app.database import SessionLocal
-from backend.app.models.category import Category, CategoryStatus
+from backend.app.models.category import Category
+from backend.app.models.enums import CategoryStatus
 
 
 STARTER_CATEGORIES = [
@@ -71,7 +72,7 @@ def seed_categories():
                     description=cat_data["description"],
                     icon=cat_data["icon"],
                     display_order=cat_data["display_order"],
-                    status=CategoryStatus.Active,
+                    status=CategoryStatus.ACTIVE,
                 )
                 db.add(category)
                 added += 1

@@ -16,7 +16,8 @@ from sqlalchemy import engine_from_config, pool
 # alembic/ is at backend/alembic/, so go up two levels to project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backend.app.models import Base  # noqa: E402
+from backend.app.models.base import Base  # noqa: E402
+from backend.app.models import *  # noqa: F401, F403  # register all models so Base.metadata sees them
 
 # Alembic Config object
 config = context.config
