@@ -670,10 +670,12 @@ Identical to LostItem under `/items/found`, except fields `date_found` and
 | LostItem | `Reported`, `Matched`, `Claimed`, `Closed` | `Reported` | creation; PATCH may set any valid value for now |
 | FoundItem | `Available`, `Claimed`, `Returned` | `Available` | creation; PATCH may set any valid value for now |
 
-Real transition rules arrive with Matching (Module 4: `Reported`→`Matched`)
-and Claims (Module 5: `Matched`→`Claimed`, `Available`→`Claimed`,
-`Claimed`→`Closed`/`Returned`). Until then the API accepts any enum value on
-PATCH so Officers can drive verification.
+Real transition rules now arrive with Claims (Module 5): accept creates a
+Claim without touching item statuses; approve moves LostItem `Reported`→
+`Claimed` and FoundItem `Available`→`Claimed`; collect moves them
+`Claimed`→`Closed`/`Returned` (see §11.3 — the authoritative table). The
+`Matched` value is not driven by this workflow (see `Review.md` §Module 5);
+PATCH still accepts any enum value for officer overrides.
 
 ### 9.7 Storage & attachments
 
@@ -893,7 +895,204 @@ MATCH_ID=$(curl -s -H "Authorization: Bearer $TA" http://localhost:8000/matches 
 curl -s -X POST http://localhost:8000/matches/$MATCH_ID/accept -H "Authorization: Bearer $TB"
 ```
 
-## 11. Module status
+## 11. Claims & Verification API (Module 5)
+
+The Claims module (`backend/app/modules/claims/`) owns the ownership-claim
+workflow: Claim creation (handoff from an accepted Match), Officer/Admin
+verification (approve/reject), and collection. It is the module that actually
+drives the LostItem/FoundItem status transitions promised since Module 3.
+
+### 11.1 How a Claim is created — internal, not a public `POST /claims`
+
+There is **no public `POST /claims`**. Claim creation is the handoff from the
+Matching module's accept endpoint: `POST /matches/{id}/accept` calls
+`claims.service.create_from_match(...)` as a **direct in-process function
+call** in the same request/session — never an HTTP request between modules
+(`ABOUT.md`). The `Match.Status → Accepted` update and the new `Claim` row
+(plus its `ClaimCreated` AuditLog row) commit in one transaction.
+
+The Claim is populated with `LostItemID`, `FoundItemID`, and `UserID` = the
+**LostItem reporter** (the claimant), `ClaimDate` (server now),
+`VerificationStatus = 'Pending'`, and `Status = 'Active'` (the model default
+implied by `Entities.md`; the choice is recorded in `Review.md` §Module 5).
+Item statuses do **not** change at accept — approve/reject/collect drive them.
+`create_from_match` is idempotent per (lost, found) pair.
+
+### 11.2 Endpoint summary
+
+| Method | Path | Auth required | Purpose |
+|---|---|---|---|
+| `POST` | `/matches/{id}/accept` | owner of either item, or staff | (Module 4) Accept a `Suggested` match — **creates a Claim in-process** |
+| `GET` | `/claims` | Bearer, any active role (scoped) | List claims; Users see only their own, staff see all (`?verification_status=` filter) |
+| `GET` | `/claims/{id}` | Bearer, any active role (scoped) | One claim; cross-user access → 404 |
+| `POST` | `/claims/{id}/verify` | Bearer, **Officer / Administrator** | Approve or reject a pending claim (writes a `VerificationRecord`) |
+| `POST` | `/claims/{id}/collect` | Bearer, **Officer / Administrator** | Record the handover; completes the claim (writes a `CollectionRecord`) |
+
+`Administrator` is treated as a superset of `Officer` (consistent with
+`is_staff` from Module 3), so Admins can verify and collect.
+
+### 11.3 Status transitions (Issue 2 DoD — the authoritative table)
+
+Claim creation itself (from an accepted Match) leaves item statuses untouched:
+Claim starts `Pending`/`Active`. From there, the three outcomes:
+
+| Outcome | `Claim.VerificationStatus` | `Claim.Status` | `LostItem.Status` | `FoundItem.Status` |
+|---|---|---|---|---|
+| **Approve** | `Pending → Approved` | `Active → Active` (unchanged) | `Reported → Claimed` | `Available → Claimed` |
+| **Reject** | `Pending → Rejected` | `Active → Cancelled` | `Reported → Reported` (unchanged) | `Available → Available` (unchanged) |
+| **Collect** (after Approve) | `Approved → Approved` (unchanged) | `Active → Completed` | `Claimed → Closed` | `Claimed → Returned` |
+
+Reads: approving a claim reserves the items for the claimant (`Claimed`);
+rejecting it leaves both items exactly where they were — `Reported` /
+`Available` — so they can be matched and claimed again; collecting the item
+finishes everything (`Closed`/`Returned`/`Completed`). A rejected claim is
+`Cancelled`; a completed one is `Completed`. Terminal states are guarded:
+verifying or collecting an already-verified/completed/cancelled claim returns
+`400`.
+
+### 11.4 Per-endpoint reference
+
+#### `POST /claims/{id}/verify`
+
+Request body:
+
+```json
+{
+  "result": "Approved",          // or "Rejected" — "Pending" is rejected (422)
+  "notes": "ID matched student card",
+  "verification_method": "Student card check"
+}
+```
+
+curl:
+
+```bash
+curl -X POST http://localhost:8000/claims/1/verify \
+  -H "Authorization: Bearer $OFFICER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"result":"Approved","notes":"ID matched student card","verification_method":"Student card check"}'
+```
+
+`200` — the Claim in its new state (e.g. `verification_status: "Approved"`).
+
+Errors: `403` non-Officer/Admin; `404` unknown claim; `400` claim not
+`Pending`+`Active` (e.g. already verified, completed, or cancelled — message
+names the reason); `422` invalid body (`result: "Pending"`, bad types).
+
+#### `POST /claims/{id}/collect`
+
+Request body (all optional — send `{}`):
+
+```json
+{"collected_by": "Ada Lovelace", "recipient_signature": "A.Lovelace", "remarks": "Identity verified"}
+```
+
+curl:
+
+```bash
+curl -X POST http://localhost:8000/claims/1/collect \
+  -H "Authorization: Bearer $OFFICER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"collected_by":"Ada Lovelace","recipient_signature":"A.Lovelace","remarks":"Identity verified; item handed over"}'
+```
+
+`200` — the Claim now `status: "Completed"` with `collection_date` set.
+
+Errors: `403` non-Officer/Admin; `404` unknown claim; `400` claim not
+`Approved` or no longer `Active` (already completed/cancelled).
+
+#### `GET /claims` / `GET /claims/{id}`
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/claims
+curl -H "Authorization: Bearer $OFFICER_TOKEN" 'http://localhost:8000/claims?verification_status=Pending'
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/claims/1
+```
+
+Errors: `401` no/invalid token; `403` suspended account; `404` on
+`GET /claims/{id}` for a non-existent **or** cross-user claim (never 403).
+
+### 11.5 Transaction boundary note
+
+Every mutating step is **one atomic transaction**: the service functions
+(`create_from_match`, `verify_claim`, `collect_claim`) only mutate the session;
+the endpoint performs the single `db.commit()`. So on **approve**, the three
+status updates (`Claim.VerificationStatus`, `LostItem.Status`,
+`FoundItem.Status`) plus the `VerificationRecord` and `AuditLog` rows commit
+together or not at all. If any write fails — verified by forcing an
+`IntegrityError` (a `VerificationRecord` with a non-existent `officer_id`)
+mid-approval — the whole transaction rolls back and a fresh session sees all
+three statuses unchanged with no partial record left behind.
+
+### 11.6 AuditLog
+
+Exactly **one** `AuditLog` row is written per mutating step, with
+`EntityName='Claim'`, `EntityID=<claim_id>`, and the acting user:
+
+| Action | Actor | Sample row |
+|---|---|---|
+| `ClaimCreated` | match-accept caller | `(user_id=1, action='ClaimCreated', entity_name='Claim', entity_id=1)` |
+| `ClaimApproved` | verifying Officer/Admin | `(user_id=2, action='ClaimApproved', entity_name='Claim', entity_id=2)` |
+| `ClaimRejected` | verifying Officer/Admin | `(user_id=2, action='ClaimRejected', entity_name='Claim', entity_id=3)` |
+| `ClaimCollected` | collecting Officer/Admin | `(user_id=3, action='ClaimCollected', entity_name='Claim', entity_id=2)` |
+
+### 11.7 Quick end-to-end test sequences
+
+**Happy path (Report → Match → Accept → Claim → Verify/Approve → Collect):**
+
+```bash
+# login as the claimant, the finder, and an officer
+TA=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+TB=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"bob@example.com","password":"SuperSecret1!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+TO=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"officer@example.com","password":"TestPass123!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# 1. ada reports the lost item; bob registers the matching found item
+LOST=$(curl -s -X POST http://localhost:8000/items/lost -H "Authorization: Bearer $TA" \
+  -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Blue Sony headphones","description":"Blue Sony wireless headphones with black carrying case","date_lost":"2026-08-12","location_lost":"Library"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+FOUND=$(curl -s -X POST http://localhost:8000/items/found -H "Authorization: Bearer $TB" \
+  -H 'Content-Type: application/json' \
+  -d '{"category_id":1,"title":"Blue Sony headphones","description":"Blue Sony wireless headphones with black carrying case","date_found":"2026-08-12","storage_location":"Library"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+
+# 2. the Match appears a moment later (BackgroundTask); accept it -> Claim created
+sleep 1
+MID=$(curl -s -H "Authorization: Bearer $TA" http://localhost:8000/matches \
+  | python3 -c "import sys,json;ms=[m for m in json.load(sys.stdin) if m['lost_item_id']==$LOST and m['found_item_id']==$FOUND];print(ms[0]['id'])")
+curl -s -X POST http://localhost:8000/matches/$MID/accept -H "Authorization: Bearer $TA"
+CLAIM=$(curl -s -H "Authorization: Bearer $TA" http://localhost:8000/claims \
+  | python3 -c "import sys,json;cs=[c for c in json.load(sys.stdin) if c['lost_item_id']==$LOST];print(cs[0]['id'])")
+# claim: verification_status=Pending, status=Active; items still Reported/Available
+
+# 3. officer approves (atomic: Claim->Approved, LostItem->Claimed, FoundItem->Claimed)
+curl -s -X POST http://localhost:8000/claims/$CLAIM/verify -H "Authorization: Bearer $TO" \
+  -H 'Content-Type: application/json' -d '{"result":"Approved","notes":"ID matched"}'
+
+# 4. officer records collection (Claim->Completed, LostItem->Closed, FoundItem->Returned)
+curl -s -X POST http://localhost:8000/claims/$CLAIM/collect -H "Authorization: Bearer $TO" \
+  -H 'Content-Type: application/json' -d '{"collected_by":"Ada Lovelace","recipient_signature":"A.Lovelace"}'
+```
+
+**Reject path** (same steps 1–2, then):
+
+```bash
+# officer rejects (Claim: Pending->Rejected, Active->Cancelled; items stay Reported/Available)
+curl -s -X POST http://localhost:8000/claims/$CLAIM/verify -H "Authorization: Bearer $TO" \
+  -H 'Content-Type: application/json' \
+  -d '{"result":"Rejected","notes":"Claimant could not describe item markings"}'
+# a rejected claim cannot be collected or re-verified (both -> 400)
+curl -s -X POST http://localhost:8000/claims/$CLAIM/collect -H "Authorization: Bearer $TO" \
+  -H 'Content-Type: application/json' -d '{}'   # 400
+```
+
+---
+
+## 12. Module status
 
 | Milestone | Status |
 |-----------|--------|
@@ -902,5 +1101,6 @@ curl -s -X POST http://localhost:8000/matches/$MATCH_ID/accept -H "Authorization
 | Module 2 — Authentication | ✅ closed (see `issues/completed.md`) |
 | Module 3 — Item Management | ✅ closed (see `issues/completed.md`) |
 | Module 4 — Matching Engine | ✅ closed (see `issues/completed.md`) |
-| Modules 5–8 | not started (per scope) |
+| Module 5 — Claims & Verification | ✅ closed (see `issues/completed.md`) |
+| Modules 6–8 | not started (per scope) |
 | Module 9 — Cloud migration (optional) | not started |

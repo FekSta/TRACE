@@ -200,3 +200,40 @@ met and independently verified. Issue bodies live in `issues/Trace_isses.md`.
 **Commits:**
 - `feat: wire matching into item creation via BackgroundTask`
 - `feat: add GET /matches and accept/reject endpoints`
+
+---
+
+## [Module 5] Claim creation from accepted Match
+
+**Closed:** 2026-08-13
+**Branch:** `feature/claim-creation-from-match`
+**Definition of done met:** accepting a `Suggested` Match via the live API produced a `Claim` row (id 1) correctly linked to the originating `LostItem` (id 7), `FoundItem` (id 6), and `User` (id 1, the LostItem reporter) with `VerificationStatus=Pending`, `Status=Active`, and a `ClaimCreated` AuditLog row — and the handoff is a **direct function call**: `matching/router.py:103` calls `claims.service.create_from_match` (AST-verified call site; `claims/service.py` contains no `matching` import, so the import graph is one-way). The `Match.Status→Accepted` flip and the `Claim` row commit in one transaction. Scoping confirmed: finder sees `[]` on `GET /claims`, cross-user `GET /claims/1` → 404.
+
+**Files committed:**
+- `backend/app/modules/claims/__init__.py`
+- `backend/app/modules/claims/schemas.py` (ClaimResponse)
+- `backend/app/modules/claims/service.py` (`audit`, `get_scoped_claim`, `create_from_match`)
+- `backend/app/modules/claims/router.py` (`GET /claims`, `GET /claims/{id}`)
+- `backend/app/modules/matching/router.py` (accept calls `create_from_match`)
+- `backend/app/main.py` (wire claims router)
+
+**Commits:**
+- `feat: add claims module with create_from_match`
+- `feat: wire claim creation into matching accept endpoint`
+
+---
+
+## [Module 5] Verify/approve/reject + VerificationRecord/CollectionRecord
+
+**Closed:** 2026-08-13
+**Branch:** `feature/claim-verify-collect-workflow`
+**Definition of done met:** all three outcomes verified with curl and the status explanation written into `Notes.md` §11.3 (before → after for `Claim.VerificationStatus`, `Claim.Status`, `LostItem.Status`, `FoundItem.Status`): **approve** → `Pending→Approved` / `Active` / `Reported→Claimed` / `Available→Claimed`; **reject** → `Pending→Rejected` / `Active→Cancelled` / `Reported→Reported` / `Available→Available`; **collect** → `Approved→Approved` / `Active→Completed` / `Claimed→Closed` / `Claimed→Returned`. Each outcome was exercised end to end: approve wrote a `VerificationRecord` (`Passed`), collect wrote a `CollectionRecord` and set `CollectionDate`, reject recorded `VerificationNotes` and a `Failed` record. The three-way approval update is atomic — proven by forcing an `IntegrityError` (bad `officer_id` on the `VerificationRecord`) mid-transaction and confirming a full rollback (`Pending`/`Reported`/`Available` unchanged, no partial record). Guards tested: non-Officer verify/collect → 403, collect-before-approve → 400, re-verify/collect on terminal states → 400, `result:"Pending"` → 422, unknown claim → 404. AuditLog holds exactly one row per mutation (`ClaimCreated`/`ClaimApproved`/`ClaimRejected`/`ClaimCollected`, 6 rows across the full test run).
+
+**Files committed:**
+- `backend/app/modules/claims/schemas.py` (`ClaimVerifyRequest`, `ClaimCollectRequest`)
+- `backend/app/modules/claims/service.py` (`verify_claim`, `collect_claim`, `_ensure_verifiable`)
+- `backend/app/modules/claims/router.py` (`POST /claims/{id}/verify`, `POST /claims/{id}/collect`)
+
+**Commits:**
+- `feat: add claim verify endpoint with transactional status cascade`
+- `feat: add claim collect endpoint and CollectionRecord`
