@@ -1,0 +1,10 @@
+# Host-only artifacts — never copied into the image.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+uploads/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
