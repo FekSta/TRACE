@@ -1,0 +1,33 @@
+# TRACE backend — top-level dependency SPEC (Phase 1, local).
+#
+# This is the human-authored input. `pip-compile` turns it into the
+# fully-pinned, hash-verified LOCKFILE at requirements.txt — the file the
+# Docker image and the dev venv actually install from — so every future build
+# installs byte-for-byte the same packages as the verified demo image.
+#
+# Regenerate the lock after editing this file:
+#   pip install pip-tools
+#   pip-compile requirements.in -o requirements.txt
+#   # commit BOTH files together
+#   # (use the same Python the image runs — 3.14 — so transitive resolution
+#   #  can't drift; add --generate-hashes for hash pinning)
+#
+# Versions are pinned == to the exact set installed in the verified demo
+# image (Python 3.14.6, built 2026-08-13) — see Review.md §Module 8.
+
+# Milestone 1: ORM models, migrations, and seed scripts.
+SQLAlchemy==2.0.52
+alembic==1.19.1
+psycopg[binary]==3.3.4
+
+# Module 2 — FastAPI application + Authentication
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+# Module 3 — multipart form uploads (UploadFile)
+python-multipart==0.0.32
+PyJWT==2.13.0
+# bcrypt directly (not passlib): passlib 1.7.4 is unmaintained and breaks with
+# bcrypt 5.x on Python 3.14 — see Review.md §Module 2.
+bcrypt==5.0.0
+python-dotenv==1.2.2
+email-validator==2.3.0

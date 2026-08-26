@@ -1,53 +1,30 @@
-"""
-AuditLog entity — Supporting Layer.
+"""AuditLog model — `assets/diagrams/data-model.md`, Supporting Layer, entity 11."""
 
-Maintains a complete audit trail of significant system events.
+from __future__ import annotations
 
-See: assets/diagrams/data-model.md § 11. AuditLog
-"""
+from datetime import datetime
 
-import uuid
-from typing import Optional
+from sqlalchemy import DateTime, ForeignKey, Identity, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sqlalchemy import DateTime, ForeignKey, String, func
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-
-from backend.app.models.base import Base
+from app.db import Base
 
 
 class AuditLog(Base):
-    """
-    Immutable audit trail of system actions.
+    """Maintains a complete audit trail of significant system events."""
 
-    Records who did what, when, and from where. Never deleted — append-only.
+    __tablename__ = "audit_logs"
 
-    Attributes:
-        id: Primary key (UUID)
-        user_id: FK → User — user performing the action (nullable for system actions)
-        action: Action performed (e.g. "create", "update", "delete", "login")
-        entity_name: Name of the entity affected (e.g. "LostItem", "Claim")
-        entity_id: UUID of the affected record
-        timestamp: Date/time of action
-        ip_address: Originating IP address
-    """
-
-    __tablename__ = "audit_log"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        "audit_id",
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=func.gen_random_uuid(),
+    id: Mapped[int] = mapped_column(Identity(), primary_key=True)
+    # Nullable: system-initiated actions have no acting user (Review.md §3).
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # FK: User (actor)
+    action: Mapped[str] = mapped_column(String(50))
+    entity_name: Mapped[str] = mapped_column(String(100))
+    entity_id: Mapped[int | None] = mapped_column(Integer)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
-    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("user.user_id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    action: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    entity_name: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
-    timestamp: Mapped[Optional[str]] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(50))
+
+    # Relationship.
+    user: Mapped[User | None] = relationship(back_populates="audit_logs")

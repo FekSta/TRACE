@@ -1,0 +1,2 @@
+# LocalDiskStorage writes uploaded files into this directory (backend/uploads/).
+# Contents are gitignored (see .gitignore); only this placeholder is tracked.

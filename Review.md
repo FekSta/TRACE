@@ -1,113 +1,443 @@
-# TRACE — Review & Decision Record
+# TRACE — Review (Decision Record)
 
-> Architecture Decision Record (ADR) summary for Milestone 0–1.
-> Not a task log — see `issues/completed.md` for completion status.
-
----
-
-## 1. Modular Monolith — Confirmed
-
-**Decision:** TRACE uses a FastAPI modular monolith with one deployable app,
-one Postgres database, and six internal modules communicating via direct
-in-process function calls.
-
-**Rationale:**
-- Team size (2 developers) cannot sustain microservices overhead
-- V1 timeline demands rapid iteration; monoliths are faster to develop
-- Module boundaries are preserved via `services.py` interfaces, so extraction
-  to microservices later requires no business logic changes
-- Single DB transaction boundary simplifies data consistency
-
-**Source:** `ABOUT.md` § "Why a Modular Monolith?", `Trace_Architecture_Summary_Monolith.md`
+> An ADR-style summary of **why** TRACE is built the way it is and the decisions
+> made while implementing Milestones 0–1. This is not a task log — completed
+> issues live in `issues/completed.md`. The goal is that a future reader never
+> has to re-litigate a decision already made here.
 
 ---
 
-## 2. Decisions Made During Implementation
+## 1. Modular monolith: confirmed (non-negotiable)
 
-### 2.1 SQLAlchemy 2.0 with Mapped type annotations
-**Decision:** Use SQLAlchemy 2.0's `Mapped[type]` annotation style for all models.
-**Rationale:** Modern SQLAlchemy 2.0 requires type annotations for `mapped_column`
-when primary arguments are absent. This is the current recommended pattern.
+TRACE is a **modular monolith**, not microservices. Confirmed for this project and
+recorded here so it is not re-litigated:
 
-### 2.2 UUID Primary Keys (not Integer)
-**Decision:** All 11 entities use UUID primary keys, generated server-side via
-`gen_random_uuid()`.
-**Rationale:** `assets/diagrams/data-model.md` specifies "UUID / Integer" for all
-PKs. UUIDs were chosen because:
-- They avoid ID conflicts if the system ever runs multiple replicas
-- They make API IDs safe for external consumers (no sequential leaking)
-- Postgres 16 has native `gen_random_uuid()` — zero application overhead
+- **One FastAPI backend app**, **one PostgreSQL database**, **six internal
+  modules** (Auth, Items, Matching, Claims, Dashboard, Notifications).
+- Modules communicate via **direct in-process function calls** through each
+  module's public `services.py` — **never HTTP calls between modules, never a
+  message queue** (see `ABOUT.md`, "internal service boundaries").
+- Phase 1 is 100% local: Docker Postgres, local disk, Mailpit. No cloud services,
+  no `SUPABASE_*` env vars, no Resend.
 
-### 2.3 Native Postgres ENUMs (not VARCHAR with CHECK constraints)
-**Decision:** Enum values (`Role`, `Status`, `LostItemStatus`, etc.) are modeled
-as native Postgres ENUMs via SQLAlchemy's `Enum()` type.
-**Rationale:**
-- Type-safe at the database level — invalid values cannot be inserted
-- Matches the enum semantics in `Entities.md` exactly
-- Trade-off: adding new enum values requires a migration (acceptable for V1)
-
-### 2.4 Alembic revision naming convention
-**Decision:** Migration filenames use Alembic's default auto-generated format
-(`<revision>_<slug>.py`).
-**Rationale:** No team convention exists yet; default is sufficient. First
-migration: `ff0a486902ce_initial_schema_all_11_entities.py`.
-
-### 2.5 Package structure: single `models/` package
-**Decision:** All 11 models live in `backend/app/models/`, not one package per module.
-**Rationale:** The issue spec explicitly says "a single shared
-`backend/app/models/` package — not one package per module." This keeps
-Alembic autogeneration simple (one `Base.metadata` to scan).
-
-### 2.6 Sync engine for Alembic, async for FastAPI
-**Decision:** `database.py` provides a sync `engine` + `SessionLocal` for
-Alembic and seed scripts. FastAPI will use an async engine at runtime.
-**Rationale:** Alembic does not support async engines. The sync/async split
-is a standard SQLAlchemy pattern.
+**Why:** the CMPG213/CMPG223 timeline and team size favor one deployable over a
+7-service fleet; a single database transaction boundary keeps the matching →
+claim → verification workflow transactionally consistent; local-first development
+keeps every DoD verifiable without a cloud account. The architecture is explicitly
+designed so any module can be extracted into a standalone microservice later
+without rewriting business logic — that property is preserved by the interface
+discipline described in `Notes.md` §2 and the "no cross-module ORM imports"
+convention.
 
 ---
 
-## 3. Deviations from Specification
+## 2. Decisions made while implementing Milestones 0–1
 
-### None
-All entity definitions, attribute names, types, enum values, and FK
-relationships match `assets/diagrams/data-model.md` exactly. No silent
-guesses were made. The only interpretive decisions are:
+These are the choices the issue bodies left open; each is recorded with a
+one-line rationale. None contradict `ABOUT.md`, `assets/diagrams/data-model.md`
+(Entities), or `issues/Trace_isses.md`.
 
-- **`ondelete` behavior:** Not specified in `Entities.md`. Chose:
-  - `CASCADE` for owned entities (User → items, Claim → records)
-  - `RESTRICT` for classification (Category → items) to prevent accidental deletion
-  - `SET NULL` for references that can exist independently (Claim → LostItem/FoundItem)
-- **`Nullable` for `VerificationRecord.officer_id` and `CollectionRecord.officer_id`:**
-  Set to nullable because the officer reference could become stale if the user
-  is deleted. `SET NULL` on delete preserves the record.
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **SQLAlchemy 2.x** — installed and verified: SQLAlchemy **2.0.52**, Alembic **1.19.1**, psycopg **3.3.4** (Python 3.14.6 host venv at `backend/.venv`, gitignored) | Modern `Mapped[...]`-annotated declarative models work for both sync and async sessions, so later modules can choose their session style. |
+| 2 | **Integer identity PKs** (`INTEGER GENERATED BY DEFAULT AS IDENTITY`), not UUID | `Entities.md` explicitly permits "UUID / Integer" for every PK; integer identity is simpler for FKs/indexes, needs no Postgres extension, and keeps the Phase 2 Supabase migration trivial. |
+| 3 | **snake_case table and column names** (`users`, `lost_items`, `first_name`, …) | Postgres/SQLAlchemy convention; `Entities.md`'s CamelCase (e.g. `UserID`, `FirstName`) is preserved as the documented conceptual mapping in `Notes.md` §4. |
+| 4 | **Enums as native Postgres enums** (`user_role`, `lost_item_status`, …), storing the exact value spellings from `Entities.md` (`User`, `Officer`, `Administrator`, `Reported`, `Matched`, …, case-sensitive) | Values must match `Entities.md` exactly, case and all; native enums give the DB real type safety and readable `psql` output. Trade-off: changing values later requires a migration — acceptable for V1 (see §4). |
+| 5 | **psycopg (v3) driver** (`postgresql+psycopg://`) for migrations and seed scripts | Synchronous, modern, works cleanly in Alembic `env.py` and the seed script without async ceremony; SQLAlchemy 2.0-native. This updates the `asyncpg` driver string previously hinted in `.env.example` (flagged in §3). The models themselves are driver-agnostic. |
+| 6 | **Alembic revision naming**: autogenerated `<timestamp>_<slug>` (e.g. `<rev>_initial_schema`), with an explicit human-readable `-m` message | Alembic default; unambiguous ordering; the message is searchable in history. |
+| 7 | **Single shared models package** `backend/app/models/`, one file per entity | The Module 1 issue explicitly requires one shared package, "not one package per module". |
+| 8 | **Idempotent seed script** (`backend/seed.py`, upsert-by-name) | Re-running the seed after a migration or partial failure must not duplicate the 4 starter categories. |
+| 9 | **`postgres:16-alpine` image** | `README.md`'s "PostgreSQL 18+" badge is aspirational; `16-alpine` is a current, stable, small image verified pullable in this environment. |
+| 10 | **Named volume `trace_pgdata` + healthcheck on the `db` service** | Data survives container restarts (issue requirement); the healthcheck is needed by later modules (`depends_on: condition: service_healthy`). |
+| 11 | **Compose works without a `.env` file** (defaults via `${VAR:-default}` interpolation) | DoD: "no manual steps beyond `docker compose up db`" from a clean checkout, where `.env` is gitignored and absent. |
 
 ---
 
-## 4. Known Gaps & Risks Going into Milestone 2
+## 3. Deviations & interpretations
 
-1. **No `backend/app/` entry point configured for `uvicorn` yet.**
-   `main.py` exists but is not wired to a Dockerfile or docker-compose service.
-   This is expected — the backend service is added in a later milestone.
+Ideally there are none; anything flagged here is a documented interpretation, not
+a silent guess.
 
-2. **No authentication dependency (`require_role`) exists yet.**
-   Module 2 will build this. Models are ready to support it.
+- **No deviation from `assets/diagrams/data-model.md` entity definitions.** The
+  models follow the 11 detailed entity tables (Core Business Layer + Supporting
+  Layer) exactly.
+- **Interpretation — the "Entity Summary" table in `data-model.md`** lists a
+  `Location` entity and a polymorphic `reference_id` on `Notification` that do
+  **not** appear in the detailed entity tables, and would break the fixed count of
+  **11** entities. We followed the detailed tables (the authoritative definitions),
+  so `Location` is **not** modeled and `Notification` has no `reference_id`.
+- **Interpretation — `Attachment.RelatedEntity`** is an enum (`LostItem`,
+  `FoundItem`, `Claim`) with **no** FK column to the related row in `Entities.md`.
+  We model exactly what `Entities.md` specifies (no invented `EntityID` FK), and
+  flag the missing linkage as a Milestone 2 risk (§4).
+- **Interpretation — `AuditLog.UserID`** is nullable: system-initiated actions
+  have no acting user. `Entities.md` does not state nullability; `Notes.md` §4
+  documents this.
+- **Update to `.env.example`** — `DATABASE_URL` changed from
+  `postgresql+asyncpg://` to `postgresql+psycopg://` to match the migration/seed
+  driver (decision 5). This is a project file, not a binding architecture doc.
 
-3. **Enum value changes require migrations.**
-   Native Postgres ENUMs cannot have values removed or renamed without a
-   migration. For V1 this is fine. If Phase 2 adds new roles or statuses,
-   an Alembic migration will be needed. Consider using `VARCHAR` with
-   Python-level validation if enum values are expected to change frequently.
+---
 
-4. **No indexes on `LostItem.status` or `FoundItem.status`.**
-   Status filtering is expected to be common (e.g. "show all Open items").
-   Indexes on status columns should be added when query patterns are
-   established in Module 3.
+## 4. Known gaps & risks going into Milestone 2
 
-5. **`Attachment` table has no FK to a specific item/claim row.**
-   `RelatedEntity` + `related_entity_id` would be cleaner than the current
-   `related_entity` enum alone. However, `Entities.md` does not include a
-   `related_entity_id` column, so the Attachment table is a reference-only
-   entity for now — actual linking will be implemented when file uploads
-   are built in Module 3.
+- **Native Postgres enums**: changing an enum's values (e.g. adding a
+  `VerificationStatus` value) is a schema migration, not a data-only change.
+  Acceptable for V1; keep enum value sets stable.
+- **Integer PKs**: if a future milestone wanted UUID PKs, that would be a
+  table-by-table migration. Deliberate for V1.
+- **`Attachment` has no FK to its related item/claim** (per `Entities.md`).
+  Milestone 3 (Items) will need a resolution — e.g. a nullable polymorphic
+  `EntityID` or per-entity join tables — and that should be added to `Entities.md`
+  first.
+- **`Notification` has no reference to the match/claim it notifies about**
+  (same gap family as above).
+- **No HTTP API exists yet** — nothing to test beyond the DB/migration/seed layer
+  until Module 2.
+- **No `psql` client on the host** — the verification sequence in `Notes.md` §7
+  uses `docker compose exec db psql` instead.
+- **`backend/` has no FastAPI app or `main.py` yet** — Module 2 scaffolds it.
+- **Alembic `downgrade` leaves the native enum types behind** (autogenerate artifact — types are created with the tables but not dropped with them). Cosmetic for V1; a later cleanup migration could drop orphaned types.
+- **FK columns have no indexes** (Postgres doesn't auto-index FKs). Harmless at V1 data volumes; Module 3+ should add indexes on high-traffic FK columns (`lost_items.user_id`, `claims.user_id`, `matches.lost_item_id`/`found_item_id`, …).
+- **The connection string is duplicated** in `alembic.ini`, `.env`/`.env.example`, and `seed.py`'s fallback. `Notes.md` §6/§7 always pass `DATABASE_URL` explicitly; acceptable for V1, but a shared config module would remove the divergence risk later.
+- **A stale `DATABASE_URL` in the developer's shell environment** (pointing at `asyncpg`/`db` host from the old `.env.example`) overrides the script defaults — commands in `Notes.md` §6/§7 set it explicitly.
+- **`develop` exists only locally** — branches were created and committed locally;
+  nothing has been pushed to `origin` (no remote `develop` exists yet).
 
-6. **No `dashboard` module yet.** Dashboard endpoints are Milestone 7.
+---
+
+## Module 2 — Authentication (decided 2026-08-12)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **JWT library: PyJWT 2.13.0** (not python-jose) | Actively maintained, pure Python (no `ecdsa`/`rsa`/`pyasn1` chain), frictionless on Python 3.14; python-jose is effectively unmaintained and heavier. `TRACE_Issues.md` permits either. |
+| 2 | **Password hashing: the `bcrypt` library directly** (5.0.0, `$2b$`), cost factor **12** (2^12 iterations) | passlib 1.7.4 is unmaintained and **breaks with bcrypt 5.x on Python 3.14** — verified empirically: its wrap-bug probe feeds bcrypt a >72-byte secret, which bcrypt 5.x now rejects with `ValueError`. The issue's "passlib/bcrypt" is satisfied by bcrypt itself. Passwords over bcrypt's 72-byte hard limit are truncated to 72 bytes in both hash and verify (bcrypt 5.x raises past 72 bytes; truncation keeps register/login 500-free). |
+| 3 | **Minimal token claims**: `sub`, `UserID`, `Role`, `iat`, `exp` | DoD requires `UserID` and `Role`; nothing else is needed. Trade-off: embedding `Role` lets clients (Module 7 portal selection) read it without a DB hit, but the backend **never trusts it** — `require_role` checks the live DB role, so role changes apply immediately (cost: one DB lookup per request, fine for Phase 1). |
+| 4 | **Token lifetime: 60 minutes** (`JWT_EXPIRE_MINUTES=60`) | Short enough to bound exposure; no refresh tokens (Module 2 didn't request them — see gaps). |
+| 5 | **`HTTPBearer(auto_error=False)`** in `get_current_user` | HTTPBearer's built-in missing-credential error is **403**; the auth contract and DoD require **401** for missing tokens, so the dependency raises 401 itself. |
+| 6 | **`JWT_SECRET` lengthened to 45 chars** in `.env`/`.env.example` | PyJWT warns on HS256 keys shorter than 32 bytes; the old 30-char dev value triggered it. |
+| 7 | **Registration always creates role `User`** (no role field on the register schema) | Self-registration must not allow privilege escalation; Officer/Administrator assignment is an Administrator action in the Dashboard milestone. |
+| 8 | **FastAPI 0.141.1 wraps included routers in `_IncludedRouter`** | Cosmetic: `app.routes` no longer flattens included routes (they still serve correctly, verified via curl). Only affected the inspection code, not the app. |
+
+### Deviations
+
+- **None from `Entities.md`** — `Role`/`Status` enum values are reused verbatim from the model enums; `PasswordHash` is stored as the bcrypt hash string.
+- **None from `TRACE_Issues.md`'s Module 2 task list.** All tasks completed in order.
+- `passlib` → `bcrypt` direct (decision 2) — implementation detail within the issue's own "passlib/bcrypt" wording.
+- Test emails use `example.com` because `email-validator` 2.3 rejects reserved domains (`.local`, `.test`). No API behavior change.
+
+### Known gaps / risks into Module 3
+
+- **No refresh tokens / no logout**: an access token is valid until `exp` (60 min). Acceptable for Phase 1; revisit in Module 7 (frontend) or a security pass.
+- **No rate limiting on login** — brute-force protection is future work.
+- **`JWT_SECRET` is a plain `.env` value**, not a managed secret — fine for local Phase 1; must become a real secret for any shared environment.
+- **`GET /auth/test-protected` is throwaway** and must be removed in a later milestone.
+- **`Role` claim can go stale**; backend ignores it for authorization (DB role is authoritative) — the frontend should treat it as a hint, not a grant.
+- **The Items module exists only as a stub** (`GET /items/lost`) to prove `require_role`; Module 3 replaces it with real CRUD.
+- **Post-review hardening (fix branch `fix/auth-hardening`)**: a non-numeric `UserID` claim in a signed token now yields 401 (was an unhandled `ValueError` → 500), and passwords are truncated to bcrypt's 72-byte limit consistently in hash/verify (was a 500 on register with multibyte passwords).
+
+---
+
+## Module 3 — Item Management (decided 2026-08-12)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Scoping = role branch inside each endpoint** (one route per operation, not a separate route tree per role) | The issue explicitly prefers this when there's no strong reason to split. The owner-check helper `get_scoped()` centralizes the rule: staff see all, Users see own, cross-user → 404 (not 403, so row existence isn't leaked). |
+| 2 | **Category mutations are Administrator-only**; listing is open to any authenticated role | `data-flow.md` puts "Maintain Categories" under Administrator, but Users must read categories to report items. `include_archived=true` is Administrator-only (403 otherwise). |
+| 3 | **`DELETE /categories/{id}` archives (Status → `Archived`), never hard-deletes** | `Entities.md` gives `Category.Status` an `Archived` value, and items hold FKs to categories — a hard delete would either fail or orphan rows. Justified here per the guardrail; a hard-delete endpoint can be added later if needed. |
+| 4 | **Item updates use PATCH (partial, all fields optional, `status` included)** | Status-only changes (Officer verification) are the main update use case; a full-replace PUT would force clients to resend everything. |
+| 5 | **`LocalDiskStorage`: files stored as `<uuid4-hex>_<basename>` under `backend/uploads/`** | UUID prefix solves filename collisions and doubles as access control for the public `/media` route. `UPLOAD_DIR` env var overrides the root (default resolved to `backend/uploads/` regardless of CWD). |
+| 6 | **`/media/{filename}` is public in Phase 1, with server-side path-traversal blocking** | Attachment URLs must be fetchable from the browser without extra plumbing; unguessable UUID names are the Phase-1 authorization. Phase 2's `SupabaseStorage.get_url` will return provider URLs instead — the interface absorbs the change. |
+| 7 | **`Attachment` gained a nullable polymorphic `entity_id` column (Alembic `60ec8bad202b`)** | `Entities.md` lists `RelatedEntity` but no reference column, so an attachment couldn't actually link to its item. This was pre-flagged in Milestone 1's Review as the Module 3 resolution; `entity_id` is Integer (no FK — the `RelatedEntity` enum names the target table). Documented as an interpretation, not a silent guess. |
+| 8 | **`python-multipart` added** | FastAPI requires it for `UploadFile` multipart parsing; the app refused to boot without it (verified at runtime). |
+
+### Deviations
+
+- **`Attachment.entity_id`** — the only schema change from `Entities.md`; see decision 7. `Notes.md` §4.10 and §9.7 document it.
+- Everything else matches `Entities.md` and the `TRACE_Issues.md` Module 3 task list exactly (statuses start at `Reported`/`Available`; no extra endpoints; no pre-built matching hooks).
+- `python-multipart` is a dependency addition required by the chosen stack, not a scope change.
+
+### Known gaps / risks into Module 4
+
+- **No file-type/size validation on uploads** — anything is stored as-is; add size/MIME checks before the demo kit (Module 8).
+- **No orphaned-Attachment cleanup** — deleting an item leaves its attachment files and rows behind (the attachment's `entity_id` now makes them findable; a cleanup job is future work).
+- **Category delete is archive-only** — there is no hard-delete path; if the course brief demands literal deletion, revisit.
+- **Status transitions are unenforced** (any enum value via PATCH) until Matching (Module 4) and Claims (Module 5) add the real state machine.
+- **Public `/media`** — acceptable for Phase 1 (UUID names), but the demo/Phase-2 story should consider signed URLs or auth on media.
+- **`trace_uploads` volume is declared but unmounted** until the backend container lands in Module 8; LocalDiskStorage writes to the host `backend/uploads/` meanwhile.
+- **Post-review hardening (fix branch `fix/items-patch-null`)**: PATCH updates now ignore explicit `null` values (previously an explicit null on a NOT NULL column — e.g. `{"title": null}` — caused an unhandled `IntegrityError` → 500). Trade-off: optional fields can't be cleared via PATCH in V1. The `/media` route also now guards `isinstance(storage, LocalDiskStorage)` instead of a `type: ignore`, making its Phase-1-only nature explicit.
+
+## Module 4 — Matching Engine (decided 2026-08-12)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Weights: Category 40 (hard gate), Location 15, Date 15, Description 30 (max 100)** | Per `ABOUT.md`'s single matching engine constraint, exactly those four factors. Category is the strongest signal and a **hard gate** — a cross-category suggestion is noise on a campus (a lost phone should never match a found jacket); everything below it is weighted by how discriminating it is: description next, then location and date. Edge case by design: *different category with everything else identical → score 0.00*, which is the right behaviour for V1. |
+| 2 | **Location similarity = token-set Jaccard** (`location_lost` vs the FoundItem's `storage_location`) | Small-campus locations are short phrases ("Sports Centre" vs "Sports Hall") — token Jaccard handles them without a geocoder (which would be an external service, forbidden). The FoundItem side uses `storage_location` because `Entities.md`'s FoundItem has no "found at" field — an interpretation worth revisiting if the demo expects location-of-discovery matching. |
+| 3 | **Date proximity = linear decay to 0 at ±14 days** | A 14-day window reflects how long lost/found reports stay relevant on campus; linear decay is simple, deterministic, and easy to tune. No date on either side = neutral (0), never a penalty. |
+| 4 | **Description similarity = stopword-stripped token Jaccard, no external library** | `ABOUT.md` forbids LLM/network calls for matching. A built-in ~12-word stopword list is enough at this scale; a proper NLP library (e.g. rapidfuzz) is a candidate if demo scoring feels off. |
+| 5 | **`MATCH_THRESHOLD = 60.00`** | With category gated at 40, reaching 60 needs real additional signal (e.g. same category + strong description overlap alone; or same category + close dates + partial description). If the demo shows false positives, raise toward 70; false negatives, lower toward 50 — the constant lives in `similarity.py` with the rest of the formula. |
+| 6 | **Matching runs as a `FastAPI BackgroundTask` after the creation response — no message queue** | `ABOUT.md` mandates in-process calls, and a campus pilot does not need durability/backpressure. Verified empirically: a FoundItem creation that produced a 100.00 match returned in **~106 ms** and the `Match` row was queryable immediately after. |
+| 7 | **`Match` writes are de-duplicated per (lost, found) pair** | The model already has `uq_matches_lost_item_found_item`; the runner checks for an existing row before inserting so a re-trigger (or a future "score an item" endpoint) can't create duplicates. |
+| 8 | **Scoring runs one-way on creation**: new LostItem → all `Available` FoundItems; new FoundItem → all `Reported` LostItems | New items are always `Reported`/`Available` at creation; filtering the *opposite* side keeps closed/claimed/returned items out of fresh suggestions. No re-scoring on item edits in this milestone. |
+| 9 | **`GET /matches` scoping reuses Module 3's `is_staff`** | The matching router imports `is_staff` from `items/service.py` rather than reinventing role logic. A User sees matches where *either* item is theirs; staff see all; cross-user accept/reject → 404 (consistent with Module 3's no-existence-leak rule). |
+| 10 | **Accept/reject only transitions from `Suggested`; otherwise 409** | Keeps `Match.Status` a strict Suggested → Accepted/Rejected one-way move in this milestone, mirroring the future claims workflow. Effect of accept is **only** `Match.Status` update — Claim creation is explicitly Module 5's job. |
+
+### Deviations
+
+- **None from `Entities.md` or the Module 4 task list.** The `Match` table already existed from Milestone 1 (no schema change this milestone). One wording note: the issue says "run in a Python shell **inside the backend container**" — Phase 1 runs the backend from `backend/.venv` on the host (only Postgres is containerized), so the shell-test proof ran in that exact interpreter, which is the same runtime the API uses. `Notes.md` §10.1 documents the three sample pairs and outputs.
+- The `?status=` query filter on `GET /matches` is a small convenience beyond "filtered by item or user" — harmless, documented in `Notes.md` §10.3.
+
+### Known gaps / risks into Module 5
+
+- **Matching only runs once at creation** — editing an item later does not re-score it against the opposite side. If the demo edits items after matching, this will miss matches.
+- **No sibling auto-rejection** — accepting a match does not auto-reject other `Suggested` matches on the same lost item; the Claims workflow (Module 5) may want that.
+- **Deleting an item that has `Match` rows now 500s (FK `IntegrityError`)** — Module 3's hard `DELETE /items/{...}` still exists, and `matches` has FKs to both item tables with no `ondelete`. This interaction is new as of Module 4; Module 5 should decide between `ondelete="CASCADE"` (or a migration) and soft-deleting items before any delete path is demoed. `get_scoped_match` lazy-loads the item relationships, so this stays unreachable via the API only because the FK blocks the delete.
+- **In-process `BackgroundTask`** — a slow scoring pass competes with the next request's event loop under real load. Fine for a pilot; if the item count grows, move scoring to a worker process (still no queue per `ABOUT.md` unless the architecture decision changes).
+- **No location geocoding / no brand-colour matching** — deliberately out of the V1 constraint; candidates for tuning if demo matches feel wrong.
+- **FoundItem has no "found at" location** — matching uses `storage_location`, which may differ from where the item was actually found; revisit before Phase 2.
+
+---
+
+## Module 5 — Claims & Verification (decided 2026-08-13)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Status cascade — the exact transition set (this is the Issue 2 DoD answer):** accepting a Match creates a Claim (`VerificationStatus=Pending`, `Status=Active`) and leaves item statuses untouched. **Approve**: `Claim.VerificationStatus Pending→Approved`; `LostItem Reported→Claimed`; `FoundItem Available→Claimed` (`Claim.Status` stays `Active`). **Reject**: `Claim.VerificationStatus Pending→Rejected`; `Claim.Status Active→Cancelled`; **items stay `Reported`/`Available`** (they never left those states at accept, so rejection leaves them exactly where they were — open to be matched and claimed again). **Collect** (Approved claims only): `Claim.Status Active→Completed` (+`CollectionDate`); `LostItem Claimed→Closed`; `FoundItem Claimed→Returned` | A claim exists from the moment a match is accepted, so by verify time the items are still in their open states — there is no intermediate `Matched` state to revert from. "Rejected → items back to prior status" therefore means "unchanged"; setting them to `Reported`/`Available` explicitly would be a no-op today but would **not** be a no-op if a future milestone moved items to `Claimed` before verification, so the choice is documented rather than coded. |
+| 2 | **`LostItem.Status='Matched'` is not driven by this workflow** (it remains settable via PATCH) | With claim creation bound to match-accept, an item goes straight to `Claimed` on approval; `Matched` never appears in the lifecycle. Keeping it enum-valued but unused preserves `Entities.md`'s enum exactly and leaves a hook if the demo wants a "matched but unclaimed" pause later. |
+| 3 | **Single transaction per mutating step**: the service functions mutate the session without committing; the endpoint performs one `db.commit()` | This makes approve's three status updates (plus the `VerificationRecord` and `AuditLog` rows) atomic by construction. **Atomicity was verified by forcing a failure**: an approval transaction with a `VerificationRecord` pointing at a non-existent `officer_id` raised `IntegrityError` on commit; after rollback a fresh session saw `Pending`/`Reported`/`Available` — all three writes rolled back, no partial record left. |
+| 4 | **Claim creation from an accepted Match is a direct function call** (`matching/router.py` → `claims/service.create_from_match`), never HTTP | `ABOUT.md` mandates in-process service boundaries. The Match-status flip and the Claim row share one session/transaction (accept is atomic). **Import structure**: the dependency is one-way — Matching imports Claims, Claims never imports Matching (verified: `claims/service.py` contains no `matching` import), so each module stays independently extractable. |
+| 5 | **No public `POST /claims`** — claim creation is internal to the accept flow; the module exposes read + verify + collect | `Entities.md`/data-flow's "User submits claim" is realised as "the user accepts the match" (the LostItem reporter becomes the claimant — `Claim.UserID = lost_item.user_id` regardless of who clicks accept). A free-standing `POST /claims` is deferred; if Module 7 wants a manual-claim form it should call the same service function. |
+| 6 | **Verify and collect are Officer *and* Administrator** (Admin treated as a superset of Officer, matching Module 3's `is_staff`) | Role hierarchy is flat in `Entities.md` but the codebase already treats Admin as a strict superset everywhere; allowing Admin to verify/collect is consistent and costs nothing. |
+| 7 | **`VerificationRecord` mirrors the decision**: approve → `Result=Passed`, reject → `Result=Failed`; `Claim.OfficerID` and `Claim.VerificationNotes` are set on both outcomes | `Entities.md` gives `VerificationRecord.Result` only `Passed`/`Failed` — the mapping from `Approved`/`Rejected` is a one-line, documented interpretation. |
+| 8 | **Terminal-state guards**: verify requires `Pending`+`Active`; collect requires `Approved`+`Active`; anything else → 400 with a named reason | A rejected/completed/cancelled claim can never be verified or collected again, and a claim can only be collected once. Tested for every combination. |
+| 9 | **`GET /claims` (+`?verification_status=` filter) and `GET /claims/{id}`**, scoped exactly like Module 3 items (own rows for Users, 404 on cross-user access) | Needed for the data-flow's "Track claim status" and for the DoD's "confirm a Claim exists". No extra endpoints were added beyond the issue's list (no claim PUT/DELETE — status changes are the workflow's job, not client PATCHes). |
+| 10 | **`Claim.VerificationStatus` and `Claim.Status` are deliberately not conflated** — `VerificationStatus` (`Pending/Approved/Rejected`) tracks the ownership decision; `Status` (`Active/Completed/Cancelled`) tracks the claim's lifecycle. Reject sets `VerificationStatus=Rejected` **and** `Status=Cancelled`; approve only sets `VerificationStatus=Approved` (lifecycle ends at `Completed` on collect) | The issue explicitly warned against conflating the two fields; the API response exposes both, and the status table in `Notes.md` §11.3 keeps them in separate columns. |
+
+### Deviations
+
+- **None from `Entities.md`** — `Claim`, `VerificationRecord`, and `CollectionRecord` use the model columns/enums exactly; no schema changes were needed (the tables already existed from Milestone 1).
+- **No public `POST /claims`** (decision 5) — `TRACE_Issues.md`'s Module 5 Issue 1 says claim creation happens "from an accepted Match"; the task text allowed us to clarify whether a public route exists, and we chose not to add one.
+- **Item statuses on reject stay unchanged** (decision 1) — the issue left "update statuses appropriately" open; the table in `Notes.md` §11.3 is the definitive answer.
+- **Module 4's Review said accept's effect was "only Match.Status" with Claim creation "explicitly Module 5's job"** — now done: accept flips the match **and** creates the claim in one transaction.
+
+### Known gaps / risks into Module 6 (Notifications)
+
+- **No sibling-match handling**: accepting one match does not auto-reject other `Suggested` matches on the same LostItem/FoundItem, so a LostItem can end up with a second accepted match and a second Claim. Module 6 (or a small Module 5.5 fix) should decide: auto-reject siblings on accept, or dedupe/guard in `create_from_match` beyond the (lost, found)-pair idempotency already in place.
+- **No notifications fired** on claim creation / approve / reject / collect — **explicit handoff point to Module 6**: the four `AuditLog`-bearing steps above are exactly the trigger points the Notifications module will hook (`Notification` rows + email), per `TRACE_Issues.md` Module 6.
+- **No concurrency protection on the verify/collect guards (TOCTOU)**: two simultaneous `verify` (or `collect`) requests can both read `Pending`/`Active`, both pass the guard, and both write — the second overwrites the first and produces duplicate `VerificationRecord`/`AuditLog` rows. V1-acceptable for a single-campus pilot (requests are rare and serialized by the session), but a `SELECT … FOR UPDATE` or an optimistic-lock column would close it before any multi-worker deployment.
+- **Rejected items are not re-scored**: after a reject, the LostItem/FoundItem are back at `Reported`/`Available`, but matching only runs at creation — new pairs are suggested only when new items are created. If the demo expects re-matching after rejection, add a re-score trigger.
+- **`claim.collection_date` is set explicitly** (`datetime.now(timezone.utc)`) rather than via `server_default` — consistent with the model, but worth noting for any future audit of "when did collection happen".
+- **No claim PATCH/DELETE** — officers cannot edit or void a claim outside the workflow; Module 7's officer portal should use verify/collect only.
+- **`create_from_match` is idempotent per (lost, found) pair but not per Match** — a retried accept on an already-accepted Match is blocked by the Module 4 `409` guard anyway, so the pair-idempotency is a belt-and-braces safety net.
+
+---
+
+## Module 6 — Notifications (decided 2026-08-13)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **`FastAPI BackgroundTask`, not a queue** — every trigger registers a background task (or runs inside Module 4's existing matching background runners); email delivery never sits in the request path | `ABOUT.md` allows no message queue and mandates in-process calls; the single campus pilot has no durability/backpressure needs, and Module 4 already proved the pattern. Verified empirically: with SMTP deliberately dead, accepting a match still returned `200` in ~0.07 s — the email attempt happens after the response. |
+| 2 | **"Item ready for collection" = the moment a claim is approved** — the FoundItem is then reserved for the claimant and ready to be handed over; the approve path fires **two** notifications ("claim approved" + "item ready for collection") | `TRACE_Issues.md` lists "item ready for collection" without a definition; the issue body itself suggests the claim-approved interpretation and it matches the demo flow (approve → user collects). An alternative (a separate email at `POST /claims/{id}/collect`) would fire *after* the item is already handed over, which is too late to be useful. |
+| 3 | **`Notification` rows are decoupled from email sends**: each trigger commits its row(s) first, then attempts `email_backend.send(...)` inside a `try/except` that logs and swallows failures | The row is the durable record — it must exist even if Mailpit/Resend is down. Verified by pointing `SMTP_PORT` at a dead port: rows persisted, zero emails delivered, three send failures logged, app healthy, `health` still 200. |
+| 4 | **`EmailBackend` mirrors `StorageBackend` exactly**: interface + `SmtpEmailBackend` + a shared `email_backend` singleton selected by `EMAIL_BACKEND`; call sites use only the singleton | Same Phase 1/2 seam discipline as storage (Notes §2): Module 9 adds `ResendEmailBackend` behind the interface and flips an env var — trigger code is untouched. `EMAIL_BACKEND` defaults to `smtp` and raises on unknown values so a mis-set env var fails loudly at boot, not silently at send time. |
+| 5 | **Recipients: new-match emails go to *both* parties; claim emails go to the claimant only** | Both item owners care about a potential match (the demo's "wow" and genuinely useful). Claim outcomes concern the claimant; notifying "all officers" needs a role query and is deliberately left out of this milestone (see gaps). |
+| 6 | **Email content is plain text** (subject + body) via `smtplib`/`email.message` | `EmailBackend.send(to, subject, body)` keeps the interface trivial and the Resend adapter trivial too (Resend takes the same three strings); HTML/attachments are future work. |
+
+### Deviations
+
+- **None from `Entities.md`** — the `Notification` model (existing since Milestone 1) is used as-is: `NotificationType` enum (`Match`/`Claim`/`Reminder`/`System`), `IsRead` default false, FK to `User`. No schema changes.
+- **No email for the collect step** (`POST /claims/{id}/collect`) — the four-event list in `TRACE_Issues.md` does not include it, and decision 2 interprets "ready for collection" as the approval moment. A "returned/complete" email is a candidate for a later milestone.
+- **No `Reminder`/`System` type usage** — only `Match` and `Claim` are produced by the four events; the other two enum values stay available.
+- **`Notification.IsRead` is never set** — nothing reads notifications yet (no UI); Module 7 adds the read/listing surface.
+- **`EMAIL_BACKEND`/`SMTP_*` vars added to `.env` and `.env.example`** — `SMTP_HOST` default is `localhost` (host-side Phase 1 backend); `.env.example` documents the `mailpit` compose-network value for Module 8, mirroring the `DATABASE_URL` localhost-vs-db convention.
+
+### Known gaps / risks into Module 7 (Frontend)
+
+- **No `GET /notifications` endpoint yet** — rows exist but nothing lists or marks them read (`IsRead` stays false). Module 7's portal needs the read/ack surface and should expose it (a small Notifications read route is the natural place).
+- **No notification preferences / opt-out** — every trigger emails unconditionally; per-user preferences are future work.
+- **No SMTP retry-on-failure** — a failed send is logged and dropped. Fine for a pilot against a local catcher; a retry/backoff or dead-letter is future work.
+- **A `Notification` row-write failure is also only logged** — if the row commit itself fails (DB error inside the background task's broad `except Exception`), the event is left without a row *and* without an email, with no retry. Email-failure resilience is proven (rows survive dead SMTP); row-write-failure resilience is a future concern.
+- **Match emails can multiply** — a new FoundItem scored against several matching LostItems fires one email per match (per both parties); at pilot scale this is fine, but it should be de-duplicated (e.g. digest) if demo volumes grow.
+- **Duplicate recipient edge case** — if the same user reported both the lost and the found item, the match trigger writes two rows and sends two identical emails to one address. Harmless, but a dedupe per (user, event) would be cleaner.
+- **BackgroundTask in-process** — SMTP sends compete with the event loop (same caveat as Module 4's matching); the 5-second smtplib timeout bounds the worst case.
+
+---
+
+## Module 7 — Frontend & Dashboard (decided 2026-08-13)
+
+### Design-source decisions
+
+| # | Decision | Rationale |
+|---|---|---|
+| 1 | **`demo/officer/style.css` is the single shared design system** for all three portals; `demo/user/`'s CSS is **superseded** by it | Per the milestone brief. The User mockup informed *what* the User portal shows and does (action cards, stats, activity table), but its separate `style.css` was not translated — those layout ideas were rebuilt on the officer tokens (via `frontend/src/index.css` `@theme` + `src/components/ui/`). |
+| 2 | **Admin portal is an extension of the officer system** (no mockup existed) | Layout decisions in the absence of a mockup: reuse the officer AppShell 1:1 (same sidebar/topbar), officer-style stat cards for the summary, officer tables for category management, and explained gap panels for Reports and Audit Log. Nothing new visually was invented. |
+| 3 | **`demo/UI/` is legacy/secondary** — pulled for *content* only | Per the brief it is not a third design language to reconcile. What was pulled: the admin "Manage Categories" table and "Reports" page *concepts*, restyled on officer tokens. Its Material-3 palette/surfaces were not adopted; where it conflicts with `demo/auth/` or `demo/officer/`, those two win. |
+| 4 | **React-TS template** | Team default per the issue text; matches the fully-typed backend. |
+| 5 | **JWT stored in `localStorage`** (not in-memory + refresh) | Trade-off: persistence survives page refresh (a demo/refresh doesn't log you out) at the cost of greater XSS exposure. Mitigations: no refresh tokens exist (Module 2 scope), the backend re-validates every call (any 401 logs the user out), the token expires in 60 min, and `getAuthSession` shape-checks the payload so tampered tokens don't render privileged views. In-memory would be safer against XSS but logs out on every refresh — the wrong trade for a pilot. |
+| 6 | **CORS middleware added to `backend/app/main.py`** — a user-approved deviation from "no backend changes in this pass" | A browser SPA cannot call `http://localhost:8000` cross-origin without it, and the issue mandates `VITE_API_URL=http://localhost:8000`. Added as `CORSMiddleware` (6 lines; no new routes) allowing only `http://localhost:5173` (+ 127.0.0.1); Module 8/9 hosting extends the list. This is infra plumbing, not an API-surface change. |
+| 7 | **Issue-listed Dashboard endpoints deferred** (`GET /dashboard/summary`, `GET /dashboard/reports`) | The milestone guardrail ("do not add new backend endpoints in this pass") outranks the issue's task list. The Admin summary is computed client-side from the existing list endpoints; the Reports page documents the gap. This is the explicit Module 8 handoff. |
+| 8 | **Frontend branches stacked on the Module 6 tip**, not `develop` | `develop` still lacks the Claims/Notifications modules (Modules 5–6 unmerged); the SPA needs the full API surface. Same stacking practice as Modules 5–6. |
+
+### Mockup ↔ real-API mismatches (flagged, not silently dropped)
+
+- **`demo/user/`'s standalone "Upload Photos" page has no backing screen** —
+  the real API attaches photos to an item
+  (`POST /items/{kind}/{id}/attachments`), so photo upload was folded into
+  the report forms instead.
+- **`demo/officer/`'s "Verify/Reject report" has no backing endpoint** — the
+  model has no per-report verified state. The real analog is updating the
+  item's status (`PATCH /items/{kind}/{id}`) or removing the report
+  (`DELETE`), which is what the Verify Reports page does.
+- **`demo/user/`'s map panel** — no geodata exists in the model; the
+  dashboard shows stats + a recent-activity table instead (not faked).
+- **Match/claim cards show item IDs, not titles** — the real
+  `MatchResponse`/`ClaimResponse` carry only foreign keys; My Matches
+  resolves titles from the user's own item lists where possible.
+- **Demo dates/names are static** — the SPA renders live API data.
+- **Register's password rule is stricter than the API** — the mockup's
+  `auth.js` requires a letter *and* a digit (min 8 chars), while the
+  backend enforces only `min_length 8` (Notes.md §8). Kept mockup-faithful:
+  the client rule is strictly stronger, so no user can register a password
+  the API would later reject — but it does mean "password" (8 letters)
+  can't be chosen even though the API would accept it.
+
+### Verification notes
+
+- **Issue 1 DoD**: `npm run dev` served the Tailwind-styled app (HTTP 200;
+  `--color-brand: #008542` token and a compiled `.bg-brand` utility present
+  in the served CSS). The decoded `Role` claim was read from a stored real
+  token three ways: the console debug log on login, the LoginSuccess claims
+  panel, and a node-level test of the compiled `auth.ts` against live logins
+  for all three roles. A tampered payload (no valid `exp`/`Role`) yields
+  `null` from `getAuthSession` (bug found by this test and fixed).
+- **Issue 2 DoD**: portal selection is driven entirely by the decoded JWT
+  role (`RequireRole` in `routes/guards.tsx` — wrong role bounces to the
+  correct portal; no/tampered token → `/login`). Core flows verified against
+  the local backend: (a) the compiled `api.ts` wrapper exercised live
+  (logins ×3, all list endpoints, category CRUD, user→403 role gate, and the
+  `/notifications` + `/audit-logs` 404s the gap views handle); (b) the full
+  curl flow — register → report + photo upload → match → accept (claim
+  created) → approve → collect (items Closed/Returned, claim Completed) →
+  reject path (claim Rejected/Cancelled, items back to Reported/Available,
+  re-verify 400). Cross-role calls with a User token return 403; no token
+  returns 401.
+- **Caveat**: Chrome is not installed in this environment, so the DoD was
+  verified via the dev server, compiled-module tests against the live API,
+  and curl flows rather than a browser-automation run.
+
+### Known gaps / risks into Module 8 (Local demo kit)
+
+- **`GET /notifications` and `GET /audit-logs` do not exist** — the User
+  "Notifications" view and the Admin "Audit Log" view render explained gap
+  panels; adding the read routes (a small Notifications read route + a
+  Dashboard module with summary/reports/audit-log) is the first Module 8
+  handoff, alongside the issue-listed `GET /dashboard/summary` and
+  `GET /dashboard/reports`.
+- **No React tests** — verification was typecheck/build + live-API tests; a
+  Vitest suite is future work.
+- **No offline handling / PWA** — online-first per `ABOUT.md`.
+- **Basic loading/error states only** — no skeletons or retry UI beyond
+  `useFetch`'s reload.
+- **Photo upload UX is basic** — single file, no preview or progress bar.
+- **Per-portal page state is in-memory** — each portal tracks its active
+  page in state (like the mockup); refresh/deep-link resets to the first
+  page.
+- **No notifications read/ack surface** — `IsRead` stays false everywhere
+  (unchanged Module 6 gap).
+
+---
+
+## Module 8 — Local demo kit (decided 2026-08-13)
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **`frontend` is served as a BUILT STATIC BUNDLE (nginx), not a Vite dev-server container** | The issue itself prefers the built bundle when there is no strong reason not to, and there isn't one here: `docker compose up` becomes the only prerequisite — no host `node_modules`, no `npm install`, no HMR watcher churn — which is exactly the reliability a fresh-clone demo needs. The multi-stage Dockerfile (`npm ci` → `tsc -b && vite build` → `nginx:1.27-alpine`) bakes `VITE_API_URL=http://localhost:8000` in at build time. nginx listens on **5173** — the same host port as the Vite dev server — so the Module 7 CORS allow-list (`http://localhost:5173`) works with **zero backend changes**. Trade-off: a frontend change needs a rebuild (`docker compose up --build frontend`) instead of hot reload — acceptable for a demo; dev iteration still uses `npm run dev` on the host (§13.6). |
+| 2 | **Migrations-on-startup = a shell entrypoint** (`backend/docker-entrypoint.sh`) that runs `alembic upgrade head` (with a retry loop for the db-healthy race) before `uvicorn` | A startup hook (entrypoint) rather than a manual step is the only way `docker compose up` can be the entire workflow; a FastAPI lifespan event would also work but couples the app to migration duties, and an entrypoint keeps the app itself unchanged. The retry loop covers the case where the `db` healthcheck passes but the DNS/connection is briefly not ready (seen once during verification). The same entrypoint then runs `python seed.py` (decision 3). |
+| 3 | **Seeding runs automatically on EVERY backend container start, and the seed is idempotent** — categories upsert by name; demo users are refreshed (password/role/status reset to the documented values, so the printed credentials always work); demo items are inserted **only when both `lost_items` and `found_items` tables are empty** | Decision: automatic (not a separate `make seed` gate) because the demo must be presentation-ready the moment `make demo` returns, with zero manual steps. The empty-table guard is what makes re-runs safe: `make demo` again, `make seed` again, or `docker compose restart backend` all leave data untouched (verified: counts stay at 4 users / 4 categories / 3+3 items / 2 matches across re-runs). The refresh-on-existing-user rule means a judge can play with the system and the documented logins still work afterwards. `make seed` exists as an explicit re-run convenience. |
+| 4 | **The seed script runs the REAL matching module and asserts the expected pairs** | After inserting the demo items the seed calls `matching.service.run_matching_for_found_item` — the exact `BackgroundTask` runner the Items API uses — and then **raises** unless each deliberately-matching pair exists as a `Suggested` Match at/above `MATCH_THRESHOLD` **and** the total number of `Suggested` matches equals the expected count (no spurious suggestions). This is the Module 3/4 end-to-end regression check the milestone demands (a real `Suggested` Match via the real module, not an eyeballed similarity), and it fails the boot loudly if matching ever regresses. Both seeded pairs score **100.00** (identical category/location/date/description; threshold is 60.00). |
+| 5 | **One root `docker-compose.yml` with all four services; `db` healthcheck + `depends_on: condition: service_healthy`; mailpit pinned to `v1.30.7`; backend gets its own `/health` check** | Compose-file consolidation per the issue. The db healthcheck already existed; `backend` now waits on it. Mailpit was previously `:latest`; pinning to the verified-running version (v1.30.7) removes the “image changed since last demo” risk. The backend healthcheck is beyond the issue's letter but is what lets `make demo` (and `docker compose ps`) determine “ready” — the wait loop in the Makefile polls `GET /health`. |
+| 6 | **Compose-network env is explicit in the compose file** — `DATABASE_URL` built from the `POSTGRES_*` vars with host `db`, `SMTP_HOST: mailpit`, `UPLOAD_DIR: /app/uploads`; every var has a `${VAR:-default}` fallback; `STORAGE_BACKEND`/`EMAIL_BACKEND` are **pinned** to `local`/`smtp` (not interpolated) | The repo `.env` (gitignored) holds host-side values (`localhost`, `SMTP_HOST=localhost`) that must NOT reach the container; composing the URL from the `POSTGRES_*` vars avoids that class of bug entirely, and the defaults keep a fresh checkout (no `.env`) working with zero manual steps. Pinning the two backend selectors means a stray Phase-2 value in the host `.env` (e.g. `EMAIL_BACKEND=resend`) can never crash the demo container at import — Phase 2 switches them via a compose override instead. |
+| 7 | **Two commits for the two issues, kept bisectable** — issue 1 (compose + entrypoint) is its own branch; issue 2 (seed + Makefile) is a second branch on top | The milestone's own guidance: if `make demo` breaks later you can bisect between “the stack doesn't come up” (issue 1) and “the stack comes up but seeding failed” (issue 2). The entrypoint running the *old* Module-1 category seed on the issue-1 branch was intentional (bisect-friendly: seeding categories always worked; issue 2 only extends the seed with users/items/matching). |
+
+### Deviations
+
+- **Branched from the Module 7 tip, not `develop`** — same stacking practice as
+  Module 7 (Review.md §Module 7 decision 8): `develop` still lacks Modules 5–7
+  and no `origin/develop` exists, so branching from the Module-7 tip (which
+  contains everything) is the only correct base. Documented here, not a silent
+  guess.
+- **No backend application-code changes in this milestone.** The entrypoint
+  and Dockerfiles are new infra; `seed.py` grew (it is a script, not a module);
+  the FastAPI app, routers, services, and models are untouched. CORS is
+  unchanged because the built frontend is served on the already-allowed
+  `:5173` origin.
+- **`backend/.dockerignore` and `frontend/.dockerignore`** are new build-context
+  hygiene (keep `.venv`/`node_modules`/`uploads`/`.env` out of the images).
+- **The issue list left “vite dev server vs built bundle” open** — decided in
+  favour of the built bundle (decision 1), which is the option the issue itself
+  recommends.
+- **Seed script consolidated, not duplicated** — `backend/seed.py` was extended
+  in place (Module 1's category seed is the same file's first step), per the
+  “consolidate rather than duplicate” instruction.
+
+### Known gaps / risks into the offline smoke test & Module 9
+
+- **Cold-cache build time**: first `make demo` took ~3–6 min in verification
+  (backend pip install + frontend `npm ci`/`vite build`); subsequent runs are
+  seconds. The offline smoke test (next Module 8 issue) should keep this in
+  mind — the build needs the package registries the first time.
+- **Python dependency versions: RESOLVED (2026-08-13).** `requirements.txt` is
+  now a pip-compiled **lockfile** (`backend/requirements.in` is the
+  human-readable spec) with all 31 packages pinned `==` to the exact set
+  installed in the verified demo image — proven byte-for-byte: installing the
+  lock in a scratch venv and a rebuilt container both `pip freeze` IDENTICALLY
+  to the original image. The base image is pinned too (`python:3.14.6-slim`).
+  **Caveat**: hash-pinning (`pip-compile --generate-hashes`) was attempted but
+  this environment could not complete the hash-download step (repeated 10-min
+  timeouts), so the lock is version-pinned only, not hash-verified. Re-adding
+  `--generate-hashes` on a healthier network is a trivial follow-up.
+- **Floating base-image tags**: `postgres:16-alpine`, `node:22-alpine`,
+  `nginx:1.27-alpine` move within their major versions. Only mailpit is pinned.
+  If reproducibility becomes critical, pin SHAs.
+- **The deliberately-matching pairs use fixed dates (2026-08-10/12)** — scoring
+  is purely relative (date *difference* between the pair), so any two dates
+  within 14 days of each other score identically; fixed dates keep the demo
+  deterministic.
+- **Seed-time notification emails are best-effort**: the match triggers fire
+  during backend startup, which can race mailpit's first boot. `Notification`
+  rows always persist (the durable record); emails appear in Mailpit when
+  mailpit is already up (in verification all 4 landed). If a demo shows an
+  empty inbox, the rows are still there — restart the stack or `make seed` to
+  re-fire.
+- **Host port conflicts**: if a host-side dev server (`npm run dev` on 5173,
+  or a host uvicorn on 8000) is still running, `docker compose up` fails on the
+  port bind — `Tutorial.md` covers stopping them. (This bit the clean-checkout
+  verification once; it is a host-environment issue, not a compose issue.)
+- **`make demo`'s wait loop uses `curl` on the host** — fine on macOS/Linux
+  dev boxes; on a minimal container-as-host it would need an alternative.
+- **Browser click-through was not verified** — Chrome is not installed in this
+  environment, so “logging into the frontend” was verified via the exact API
+  endpoints the SPA calls (login ×4 roles, list endpoints, matches, full
+  accept→approve→collect flow), consistent with the Module 7 precedent. A
+  human-in-the-browser pass is part of the offline smoke-test issue.
+- **Google Fonts load from the internet** at page render (index.html `<link>`s) —
+  the built app falls back to system fonts when offline; the offline smoke
+  test should note this cosmetic dependency.
+- **Seeded matches are consumed by the demo walkthrough**: accepting/verifying
+  the seeded backpack pair flips its statuses (Closed/Returned). Re-running
+  `make demo` will NOT resurrect consumed matches (item tables are non-empty,
+  so the seed skips items) — the documented reset is `make clean` (down -v)
+  then `make demo`. This is why the milestone's idempotency question has an
+  explicit answer in decision 3.

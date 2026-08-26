@@ -1,0 +1,53 @@
+"""Application configuration — read from the repo-root `.env` (gitignored).
+
+Phase 1 local-only. `load_dotenv(..., override=True)` makes the committed
+`.env` file win over any stale values already exported in the shell, so the
+backend always runs against the intended local configuration (see `Review.md`
+for the Milestone-1 stale-`DATABASE_URL` note).
+"""
+
+import os
+from pathlib import Path
+
+from dotenv import find_dotenv, load_dotenv
+
+# Walk up from this file's directory to locate the repo-root `.env`.
+load_dotenv(find_dotenv(), override=True)
+
+
+def _get(name: str, default: str) -> str:
+    return os.environ.get(name, default)
+
+
+# --- Database ---------------------------------------------------------------
+DATABASE_URL = _get(
+    "DATABASE_URL",
+    "postgresql+psycopg://trace:trace_local_password@localhost:5432/trace",
+)
+
+# --- Authentication (JWT) ---------------------------------------------------
+# JWT_SECRET comes from .env — never hardcoded, never committed.
+JWT_SECRET = _get("JWT_SECRET", "change-this-development-secret")
+JWT_ALGORITHM = _get("JWT_ALGORITHM", "HS256")
+JWT_EXPIRE_MINUTES = int(_get("JWT_EXPIRE_MINUTES", "60"))
+
+# --- Storage (Module 3) -----------------------------------------------------
+# LocalDiskStorage root (resolved to `backend/uploads/` by default).
+UPLOAD_DIR = Path(
+    _get("UPLOAD_DIR", str(Path(__file__).resolve().parent.parent / "uploads"))
+)
+
+# --- Email (Module 6) --------------------------------------------------------
+# Phase 1 sends through the local Mailpit catcher only — no external SMTP
+# relay, no Resend (`ABOUT.md`'s single notification channel: email).
+# SMTP_HOST is `localhost` when the backend runs on the host (Phase 1); the
+# docker-compose value is `mailpit` for the Module 8 backend container.
+EMAIL_BACKEND = _get("EMAIL_BACKEND", "smtp")
+SMTP_HOST = _get("SMTP_HOST", "localhost")
+SMTP_PORT = int(_get("SMTP_PORT", "1025"))
+SMTP_FROM = _get("SMTP_FROM", "no-reply@trace.local")
+
+# --- Password hashing -------------------------------------------------------
+# bcrypt cost factor: 2^12 iterations (OWASP-current). Trade-off documented in
+# Review.md §Module 2.
+BCRYPT_ROUNDS = 12

@@ -1,0 +1,6 @@
+# Host-only artifacts / secrets — never copied into the build stage.
+node_modules/
+dist/
+.env
+.env.*
+npm-debug.log*

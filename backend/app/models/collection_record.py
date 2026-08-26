@@ -1,58 +1,30 @@
-"""
-CollectionRecord entity — Supporting Layer.
+"""CollectionRecord model — `assets/diagrams/data-model.md`, Supporting Layer, entity 9."""
 
-Records successful collection of recovered items.
+from __future__ import annotations
 
-See: assets/diagrams/data-model.md § 9. CollectionRecord
-"""
+from datetime import datetime
 
-import uuid
-from typing import Optional
+from sqlalchemy import DateTime, ForeignKey, Identity, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-
-from backend.app.models.base import Base
+from app.db import Base
 
 
 class CollectionRecord(Base):
-    """
-    Record of an item being collected by its owner.
+    """Records the successful collection of recovered items."""
 
-    Created when a verified claim is approved and the item is physically
-    handed over to the claimant.
+    __tablename__ = "collection_records"
 
-    Attributes:
-        id: Primary key (UUID)
-        claim_id: FK → Claim
-        collected_by: Name/description of person collecting
-        officer_id: FK → User — officer releasing the item
-        collection_date: Date/time of collection
-        recipient_signature: Signature reference (URL or identifier)
-        remarks: Additional notes
-    """
-
-    __tablename__ = "collection_record"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        "collection_id",
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=func.gen_random_uuid(),
+    id: Mapped[int] = mapped_column(Identity(), primary_key=True)
+    claim_id: Mapped[int] = mapped_column(ForeignKey("claims.id"))    # FK: Claim
+    collected_by: Mapped[str | None] = mapped_column(String(200))
+    officer_id: Mapped[int] = mapped_column(ForeignKey("users.id"))   # FK: User (officer)
+    collection_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
-    claim_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("claim.claim_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    collected_by: Mapped[str] = mapped_column(String(200), nullable=False)
-    officer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("user.user_id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    collection_date: Mapped[Optional[str]] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    recipient_signature: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recipient_signature: Mapped[str | None] = mapped_column(String(255))
+    remarks: Mapped[str | None] = mapped_column(Text)
+
+    # Relationships.
+    claim: Mapped[Claim] = relationship(back_populates="collection_records")
+    officer: Mapped[User] = relationship(back_populates="collection_records")

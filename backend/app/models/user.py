@@ -1,69 +1,50 @@
-"""
-User entity — Core Business Layer.
+"""User model — `assets/diagrams/data-model.md`, Core Business Layer, entity 1."""
 
-Represents every person interacting with TRACE: students, staff,
-Lost & Found Officers, and Administrators.
+from __future__ import annotations
 
-See: assets/diagrams/data-model.md § 1. User
-"""
+from datetime import datetime
 
-import enum
-import uuid
-from typing import Optional
+from sqlalchemy import DateTime, Identity, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sqlalchemy import DateTime, Enum, String, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from backend.app.models.base import Base
-
-
-class Role(str, enum.Enum):
-    """User roles in the TRACE system."""
-    User = "User"
-    Officer = "Officer"
-    Administrator = "Administrator"
-
-
-class UserStatus(str, enum.Enum):
-    """Account status values."""
-    Active = "Active"
-    Suspended = "Suspended"
-    Inactive = "Inactive"
+from app.db import Base
+from app.models.enums import UserRole, UserRoleType, UserStatus, UserStatusType
 
 
 class User(Base):
-    """
-    Represents every person interacting with the system.
+    """Represents every person interacting with the system (students, staff,
+    Lost & Found Officers, and Administrators)."""
 
-    Attributes:
-        id: Primary key (UUID)
-        first_name: User's first name
-        last_name: User's last name
-        student_number: Student or employee number
-        email: Login email address (unique)
-        phone_number: Contact number
-        password_hash: Encrypted password
-        role: User, Officer, or Administrator
-        status: Active, Suspended, or Inactive
-        created_at: Account creation timestamp
-    """
+    __tablename__ = "users"
 
-    __tablename__ = "user"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        "user_id",
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=func.gen_random_uuid(),
+    id: Mapped[int] = mapped_column(Identity(), primary_key=True)
+    first_name: Mapped[str] = mapped_column(String(100))
+    last_name: Mapped[str] = mapped_column(String(100))
+    student_number: Mapped[str | None] = mapped_column(String(50))
+    email: Mapped[str] = mapped_column(String(255), unique=True)
+    phone_number: Mapped[str | None] = mapped_column(String(30))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[UserRole] = mapped_column(UserRoleType, default=UserRole.USER)
+    status: Mapped[UserStatus] = mapped_column(UserStatusType, default=UserStatus.ACTIVE)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
-    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    student_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    phone_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[Role] = mapped_column(Enum(Role), nullable=False, default=Role.User)
-    status: Mapped[UserStatus] = mapped_column(Enum(UserStatus), nullable=False, default=UserStatus.Active)
-    created_at: Mapped[Optional[str]] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+
+    # Relationships — the FKs live on the child tables (Entities.md).
+    lost_items: Mapped[list[LostItem]] = relationship(back_populates="user")
+    found_items: Mapped[list[FoundItem]] = relationship(back_populates="user")
+    claims_submitted: Mapped[list[Claim]] = relationship(
+        back_populates="user", foreign_keys="Claim.user_id"
     )
+    claims_reviewed: Mapped[list[Claim]] = relationship(
+        back_populates="officer", foreign_keys="Claim.officer_id"
+    )
+    notifications: Mapped[list[Notification]] = relationship(back_populates="user")
+    attachments: Mapped[list[Attachment]] = relationship(back_populates="uploader")
+    verification_records: Mapped[list[VerificationRecord]] = relationship(
+        back_populates="officer"
+    )
+    collection_records: Mapped[list[CollectionRecord]] = relationship(
+        back_populates="officer"
+    )
+    audit_logs: Mapped[list[AuditLog]] = relationship(back_populates="user")

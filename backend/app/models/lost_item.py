@@ -1,81 +1,36 @@
-"""
-LostItem entity — Core Business Layer.
+"""LostItem model — `assets/diagrams/data-model.md`, Core Business Layer, entity 2."""
 
-Stores reports of items that users have lost.
+from __future__ import annotations
 
-See: assets/diagrams/data-model.md § 2. LostItem
-"""
+from datetime import date
 
-import enum
-import uuid
-from typing import Optional
+from sqlalchemy import Date, ForeignKey, Identity, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-
-from backend.app.models.base import Base
-
-
-class LostItemStatus(str, enum.Enum):
-    """Lost item lifecycle statuses."""
-    Reported = "Reported"
-    Matched = "Matched"
-    Claimed = "Claimed"
-    Closed = "Closed"
+from app.db import Base
+from app.models.enums import LostItemStatus, LostItemStatusType
 
 
 class LostItem(Base):
-    """
-    Lost item report submitted by a user.
+    """Stores reports of items that users have lost."""
 
-    Attributes:
-        id: Primary key (UUID)
-        user_id: FK → User — who reported the item
-        category_id: FK → Category — item classification
-        title: Short item title
-        description: Detailed description
-        brand: Item manufacturer or brand
-        colour: Item colour
-        date_lost: Date item was lost
-        location_lost: Last known location
-        status: Reported, Matched, Claimed, or Closed
-        created_at: Report creation timestamp
-        updated_at: Last update timestamp
-    """
+    __tablename__ = "lost_items"
 
-    __tablename__ = "lost_item"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        "lost_item_id",
-        primary_key=True,
-        default=uuid.uuid4,
-        server_default=func.gen_random_uuid(),
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("user.user_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    category_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("category.category_id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-    title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    brand: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    colour: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    date_lost: Mapped[str] = mapped_column(DateTime(timezone=True), nullable=False)
-    location_lost: Mapped[str] = mapped_column(String(255), nullable=False)
+    id: Mapped[int] = mapped_column(Identity(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))          # FK: User (reporter)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"))  # FK: Category
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text)
+    brand: Mapped[str | None] = mapped_column(String(100))
+    colour: Mapped[str | None] = mapped_column(String(50))
+    date_lost: Mapped[date | None] = mapped_column(Date)
+    location_lost: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[LostItemStatus] = mapped_column(
-        Enum(LostItemStatus), nullable=False, default=LostItemStatus.Reported
+        LostItemStatusType, default=LostItemStatus.REPORTED
     )
-    created_at: Mapped[Optional[str]] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[Optional[str]] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-    )
+
+    # Relationships (Entities.md: User → LostItem one-to-many, Category → Items).
+    user: Mapped[User] = relationship(back_populates="lost_items")
+    category: Mapped[Category] = relationship(back_populates="lost_items")
+    matches: Mapped[list[Match]] = relationship(back_populates="lost_item")
+    claims: Mapped[list[Claim]] = relationship(back_populates="lost_item")
