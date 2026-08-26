@@ -1,22 +1,26 @@
 """Claims module API (Module 5).
 
-Issue 1 exposes read endpoints only. Claim **creation** is not a public
-``POST /claims``: it happens as a direct in-process call from the Matching
-module's accept-match endpoint (``service.create_from_match``) — this module
-documents that design choice rather than hiding it. The Officer-facing
-verify/collect endpoints land in Module 5 issue 2.
+Claim **creation** is not a public ``POST /claims``: it happens as a direct
+in-process call from the Matching module's accept-match endpoint
+(``service.create_from_match``). This module exposes the read endpoints
+(claim-status tracking for Users, full visibility for staff) and the
+Officer/Admin verify workflow.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Claim, User
-from app.models.enums import ClaimVerificationStatus
-from app.modules.auth.deps import get_current_user
-from app.modules.claims.schemas import ClaimResponse
-from app.modules.claims.service import get_scoped_claim
+from app.models.enums import ClaimVerificationStatus, UserRole
+from app.modules.auth.deps import get_current_user, require_role
+from app.modules.claims.schemas import (
+    ClaimCollectRequest,
+    ClaimResponse,
+    ClaimVerifyRequest,
+)
+from app.modules.claims.service import collect_claim, get_scoped_claim, verify_claim
 from app.modules.items.service import is_staff
 
 router = APIRouter(tags=["claims"])
@@ -46,3 +50,80 @@ def get_claim(
 ) -> Claim:
     """Get one claim — 404 for cross-user access attempts."""
     return get_scoped_claim(db, claim_id, current_user)
+
+
+def _get_claim_or_404(db: Session, claim_id: int) -> Claim:
+    claim = db.get(Claim, claim_id)
+    if claim is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Claim not found"
+        )
+    return claim
+
+
+@router.post("/claims/{claim_id}/verify", response_model=ClaimResponse)
+def verify_claim_endpoint(
+    claim_id: int,
+    body: ClaimVerifyRequest,
+    current_user: User = Depends(
+        require_role(UserRole.OFFICER, UserRole.ADMINISTRATOR)
+    ),
+    db: Session = Depends(get_db),
+) -> Claim:
+    """Officer/Admin decision on a pending claim (approve or reject).
+
+    **Approve** — ``Claim.VerificationStatus → Approved``, ``LostItem →
+    Claimed``, ``FoundItem → Claimed`` (atomic — all three plus the
+    VerificationRecord and AuditLog rows commit together or not at all).
+
+    **Reject** — ``Claim.VerificationStatus → Rejected``, ``Claim.Status →
+    Cancelled``; items stay ``Reported``/``Available``.
+
+    Errors: ``403`` for non-Officer callers, ``404`` unknown claim,
+    ``400`` claim not Pending/Active (e.g. already verified, completed, or
+    cancelled), ``422`` invalid body (e.g. ``result: "Pending"``).
+    """
+    claim = _get_claim_or_404(db, claim_id)
+    verify_claim(
+        db,
+        claim=claim,
+        officer=current_user,
+        result=body.result,
+        notes=body.notes,
+        method=body.verification_method,
+    )
+    db.commit()
+    db.refresh(claim)
+    return claim
+
+
+@router.post("/claims/{claim_id}/collect", response_model=ClaimResponse)
+def collect_claim_endpoint(
+    claim_id: int,
+    body: ClaimCollectRequest,
+    current_user: User = Depends(
+        require_role(UserRole.OFFICER, UserRole.ADMINISTRATOR)
+    ),
+    db: Session = Depends(get_db),
+) -> Claim:
+    """Officer/Admin records the handover of an approved item.
+
+    ``Claim.Status → Completed``, ``CollectionDate → now``, ``LostItem →
+    Closed``, ``FoundItem → Returned``; writes a CollectionRecord and an
+    AuditLog row (atomic).
+
+    Errors: ``403`` for non-Officer callers, ``404`` unknown claim,
+    ``400`` claim not Approved or already Completed/Cancelled.
+    """
+    claim = _get_claim_or_404(db, claim_id)
+    collect_claim(
+        db,
+        claim=claim,
+        officer=current_user,
+        collected_by=body.collected_by,
+        recipient_signature=body.recipient_signature,
+        remarks=body.remarks,
+    )
+    db.commit()
+    db.refresh(claim)
+    return claim
