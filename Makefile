@@ -6,7 +6,7 @@
 # demo seed automatically inside the backend container, and waits until the
 # API answers /health. See Tutorial.md for URLs and logins.
 
-.PHONY: demo seed up down clean logs ps
+.PHONY: demo seed up down clean logs ps check-migrations
 
 demo: ## Build, start, migrate and seed the full stack, then wait until ready
 	docker compose up --build -d
@@ -49,3 +49,14 @@ logs: ## Follow logs from all services
 
 ps: ## Show service status
 	docker compose ps
+
+check-migrations: ## Fail loudly unless alembic migration history has exactly one head
+	@cd backend && test -x .venv/bin/alembic || { echo "ERROR: backend/.venv is missing — run 'make venv' or build the backend image first"; exit 1; }
+	@HEADS="$$(cd backend && .venv/bin/alembic heads 2>/dev/null | grep -c '(head)' || true)"; \
+	  if [ "$${HEADS}" -ne 1 ]; then \
+	    echo "ERROR: expected exactly 1 alembic head, found $${HEADS}."; \
+	    (cd backend && .venv/bin/alembic heads); \
+	    echo "The migration history has branched — run 'alembic merge -m \"merge heads\" <head1> <head2>' (see Notes.md §6)."; \
+	    exit 1; \
+	  fi; \
+	  echo "OK: exactly one alembic migration head."

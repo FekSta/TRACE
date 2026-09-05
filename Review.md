@@ -441,3 +441,56 @@ a silent guess.
   so the seed skips items) — the documented reset is `make clean` (down -v)
   then `make demo`. This is why the milestone's idempotency question has an
   explicit answer in decision 3.
+
+---
+
+## Retrofit — Alembic multiple-heads migration error (2026-09-05)
+
+**Root cause:** the migration history branched into **two roots**. `bab69a9`
+(2026-08-12) committed `405c749934b5` (initial schema, plural names, integer
+`id`s), and `9d53b91` committed `60ec8bad202b` on top of it — the canonical
+chain that matches the current `app/models/`. Independently,
+`feature/alembic-migration-seed` (merged as `ba48341`, 2026-08-25) ran a
+`alembic revision --autogenerate` against a **superseded** UUID-based model
+design and committed `ff0a486902ce` — a second initial migration with
+`down_revision=None` (singular table names, `*_id` UUID primary keys). Both
+roots were merged into `develop`, so `alembic heads` reported two heads and
+`alembic upgrade head` refused to pick one. The backend entrypoint retried
+10× and the demo healthcheck timed out. The two generation runs branched off
+the same empty base at different times without the later author syncing
+`develop` first — the classic "two people generated a migration from a
+non-current checkout" race.
+
+**Resolution:** `alembic merge` was **not** sufficient on its own. The two
+branches genuinely conflicted — they both create the same 11 logical entities
+under different table names and primary-key types (`users`/int `id` vs
+`user`/UUID `user_id`); a bare merge would have left **both** schemas in the
+database (22 tables). The fix therefore used the merge-plus-reconcile pattern:
+
+- `13049a14c583` — `alembic merge -m "merge heads" 60ec8bad202b ff0a486902ce`;
+  a pure mergepoint over both heads, no schema change.
+- `3226c58aebdc` — conflict-resolution migration **on top of the merge** that
+  drops the 11 stale singular-UUID tables (`ff0a486902ce`'s schema, children
+  first) and their orphaned enum types. The canonical `405c749934b5` →
+  `60ec8bad202b` schema is left untouched.
+
+The final history is a single line: `405c749934b5 → 60ec8bad202b` and
+`ff0a486902ce` both feed the mergepoint, then `3226c58aebdc` is the sole head.
+`alembic upgrade head` against a fresh `db` volume now produces exactly the
+Milestone-1-DoD schema: 11 tables, 17 foreign keys, and the 11 canonical enum
+types.
+
+**Guardrail added to prevent recurrence:**
+- `backend/docker-entrypoint.sh` — pre-flight `alembic heads` check that exits
+  `1` with a merge instruction if more than one head is reported (runs before
+  the migration retry loop; `alembic heads` needs no DB connection, so it
+  cannot race the database warm-up).
+- `Makefile` — `make check-migrations` target: same check for host-side
+  authoring, fails loudly unless exactly one head exists.
+- **Why this stops the silent retry:** today's failure mode was the entrypoint
+  retrying a would-be-impossible `upgrade head` 10× and the healthcheck timing
+  out. The pre-flight check turns that into an immediate, explicit error —
+  and, for anyone about to commit a new migration, `make check-migrations`
+  catches a branch before it lands. No migration file was deleted and nothing
+  was rewritten by hand; the fix is a normal merge revision plus a
+  reconciliation revision, exactly the Alembic-recommended path.
