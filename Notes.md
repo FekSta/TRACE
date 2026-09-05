@@ -447,6 +447,46 @@ cd backend
 .venv/bin/python seed.py
 ```
 
+### 6.1 Migration-head guardrail & safe workflow (Retrofit 2026-09-05)
+
+**Incident:** the migration history had **two heads**. `ff0a486902ce`
+(`feature/alembic-migration-seed`) was generated as an initial migration from a
+superseded UUID/singular-table model design, while `405c749934b5` →
+`60ec8bad202b` (the canonical plural/integer-id chain matching `app/models/`)
+had already been committed — i.e. two roots with `down_revision=None`. Alembic
+refused `upgrade head` ("multiple head revisions"), so the backend container's
+startup migration retried 10× and the healthcheck timed out.
+
+**Fix:** `alembic merge -m "merge heads" 60ec8bad202b ff0a486902ce` created
+`13049a14c583` (a mergepoint over both heads), then `3226c58aebdc` reconciled
+the genuine schema conflict by dropping the stale singular/UUID tables and
+their enum types, leaving exactly the canonical 11 tables / 17 FKs.
+
+**Guardrail:** `make check-migrations` (and the backend entrypoint's pre-flight
+check) runs `alembic heads` and fails loudly unless there is exactly **one**
+head. `alembic heads` reads only the version scripts — no DB connection — so
+it never races the database warm-up.
+
+**Safe workflow for authoring a new migration:**
+
+```bash
+# 1. Always sync first — never generate off a stale local history:
+git checkout develop && git pull --rebase origin develop
+
+# 2. Verify the history is still a single line BEFORE generating:
+cd backend && .venv/bin/alembic heads   # must print exactly one "(head)" line
+
+# 3. Generate, then re-check heads before committing:
+.venv/bin/alembic revision --autogenerate -m "describe the change"
+.venv/bin/alembic heads                 # still exactly one head
+```
+
+If step 2 or 3 ever reports two or more heads, stop and fix with
+`alembic merge -m "merge heads" <head1> <head2>` **before** writing anything on
+top — do not edit `down_revision` pointers by hand and never delete a migration
+file. Two engineers generating migrations around the same time without syncing
+`develop` first is what caused this incident.
+
 ---
 
 ## 7. Quick verification sequence
