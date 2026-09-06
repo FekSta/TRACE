@@ -338,8 +338,11 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/matches
 
 | Target | What it does |
 |--------|--------------|
-| `make demo` | **Build + start + migrate + seed + wait for `/health`** — the one command |
+| `make demo` | **Build + start + migrate + seed + wait for `/health`** — the one command. Now explicitly runs `make migrate` then `make seed` as visible steps after the backend is healthy (build → up → migrate → seed → wait). |
+| `make migrate` | Run Alembic migrations against the running backend container (`docker compose exec backend alembic upgrade head`). Idempotent — safe to re-run any time against an already-migrated database. **Both this target and the backend entrypoint exist and are not redundant:** the entrypoint (`docker-entrypoint.sh`) is a safety net for non-`make` usage (plain `docker compose up` self-migrates); `make migrate` gives developers and CI explicit control without restarting the backend. |
 | `make seed` | Re-run the idempotent seed against the running stack (safe any time) |
+| `make test-frontend` | Run the existing frontend unit test suite locally — the **same suite** as `.github/workflows/frontend-unit-tests.yml`. Runs `cd frontend && npm ci && npm run test:coverage`. Requires **Node 22** locally (matching CI's `actions/setup-node` with `NODE_VERSION: 22`). To run manually without `make`: `cd frontend && npm ci && npm run test:coverage`. Does **not** add or modify any test files — it is a thin wrapper around the existing Vitest suite. |
+| `make update-requirements` | Regenerate pinned dependency lockfiles from current specs (**re-pin, not bump-to-latest**): backend `requirements.txt` from `requirements.in` via `pip-compile`; frontend `package-lock.json` from `package.json` via `npm install`. After running, always rebuild the stack (`docker compose build` or `make demo`) and re-run `make test-frontend` to confirm nothing broke. Requires `pip-tools` in `backend/.venv` (install with `cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools`). |
 | `make up` / `make down` | Start / stop the stack (data volume preserved) |
 | `make clean` | Stop and **wipe all data** (`docker compose down -v`) — fresh-demo reset |
 | `make logs` / `make ps` | Follow logs / show service status |
@@ -446,6 +449,46 @@ Re-run the seed script (idempotent — safe to run any time):
 cd backend
 .venv/bin/python seed.py
 ```
+
+### 6.1 Migration-head guardrail & safe workflow (Retrofit 2026-09-05)
+
+**Incident:** the migration history had **two heads**. `ff0a486902ce`
+(`feature/alembic-migration-seed`) was generated as an initial migration from a
+superseded UUID/singular-table model design, while `405c749934b5` →
+`60ec8bad202b` (the canonical plural/integer-id chain matching `app/models/`)
+had already been committed — i.e. two roots with `down_revision=None`. Alembic
+refused `upgrade head` ("multiple head revisions"), so the backend container's
+startup migration retried 10× and the healthcheck timed out.
+
+**Fix:** `alembic merge -m "merge heads" 60ec8bad202b ff0a486902ce` created
+`13049a14c583` (a mergepoint over both heads), then `3226c58aebdc` reconciled
+the genuine schema conflict by dropping the stale singular/UUID tables and
+their enum types, leaving exactly the canonical 11 tables / 17 FKs.
+
+**Guardrail:** `make check-migrations` (and the backend entrypoint's pre-flight
+check) runs `alembic heads` and fails loudly unless there is exactly **one**
+head. `alembic heads` reads only the version scripts — no DB connection — so
+it never races the database warm-up.
+
+**Safe workflow for authoring a new migration:**
+
+```bash
+# 1. Always sync first — never generate off a stale local history:
+git checkout develop && git pull --rebase origin develop
+
+# 2. Verify the history is still a single line BEFORE generating:
+cd backend && .venv/bin/alembic heads   # must print exactly one "(head)" line
+
+# 3. Generate, then re-check heads before committing:
+.venv/bin/alembic revision --autogenerate -m "describe the change"
+.venv/bin/alembic heads                 # still exactly one head
+```
+
+If step 2 or 3 ever reports two or more heads, stop and fix with
+`alembic merge -m "merge heads" <head1> <head2>` **before** writing anything on
+top — do not edit `down_revision` pointers by hand and never delete a migration
+file. Two engineers generating migrations around the same time without syncing
+`develop` first is what caused this incident.
 
 ---
 
@@ -1368,7 +1411,7 @@ above. Unlike the earlier sections this one documents the app's
 | `frontend/src/components/layout/AppShell.tsx` | Shared sidebar + topbar shell for all three portals |
 | `frontend/src/components/ui/` | Shared design-system primitives (Button, Card, StatusBadge, StatCard, Modal, Field, Toast, …) |
 | `frontend/src/lib/auth.ts` | JWT storage + dependency-free decode (`Role` claim), `getAuthSession`, `portalForRole` |
-| `frontend/src/lib/auth-context.tsx` | Session context + logout |
+| `frontend/src/lib/auth-context.tsx` | Session context — `login(token)` (store + establish session), `logout`, session for guards |
 | `frontend/src/lib/api.ts` | Fetch wrapper — the only place HTTP happens |
 | `frontend/src/lib/types.ts` | TypeScript mirrors of the backend response schemas |
 | `frontend/src/hooks/useFetch.ts`, `useAuthedFetch.ts` | Fetching with loading/error/reload; logout on 401 |
@@ -1401,16 +1444,22 @@ amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
 
 ### 13.3 Auth flow
 
-- **Login**: `POST /auth/login` → token stored in `localStorage` under
-  `trace.access_token`; the decoded `Role` claim is read back immediately
-  (LoginSuccess renders it — the issue-1 DoD artifact).
+- **Login**: `POST /auth/login` → on success the token is stored in
+  `localStorage` under `trace.access_token` **and** the session is established
+  in the auth context via `AuthContext.login(token)` (single call, added in
+  the 2026-09-06 redirect bug fix — the context re-reads the token through
+  the shape-checked `getAuthSession()`, so a tampered token can never create
+  a session). The decoded `Role` claim is read back immediately (LoginSuccess
+  renders it — the issue-1 DoD artifact).
 - **Decode**: dependency-free `decodeToken`; `getAuthSession` enforces a
   strict payload shape (valid numeric `exp` + `UserID`, known `Role`), so a
   tampered payload cannot silently render privileged views.
-- **Routing**: `RequireRole` reads the role from the decoded token **only**
-  — no session → `/login`; wrong role for the URL → redirected to that
-  role's own portal. `Administrator` is a superset of `Officer` (may open
-  `/officer`, matching `is_staff`).
+- **Routing**: `RequireRole` reads the role from the decoded token in the
+  **auth-context session only** — no session → `/login`; wrong role for the
+  URL → redirected to that role's own portal. `Administrator` is a superset
+  of `Officer` (may open `/officer`, matching `is_staff`). Because guards
+  read context state (not storage directly), the context session MUST be set
+  at login — that is the redirect fix of 2026-09-06 (see `Review.md`).
 - **Logout / expiry**: logout clears the token; any API 401/403 also logs
   the user out. Expired tokens are detected client-side and cleared (no
   refresh tokens in this milestone). Storage-choice trade-off documented in

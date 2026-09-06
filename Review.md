@@ -441,3 +441,276 @@ a silent guess.
   so the seed skips items) — the documented reset is `make clean` (down -v)
   then `make demo`. This is why the milestone's idempotency question has an
   explicit answer in decision 3.
+
+---
+
+## Module 8 follow-ups — Makefile hardening (2026-09-06)
+
+Three follow-ups hardening the existing `make demo` setup from the
+"Seed script + `make demo` target" issue (already closed). None of these
+reopen that issue's scope — they add developer ergonomics and dependency
+hygiene on top of the working demo kit.
+
+### 1. Why `make migrate` is additive to the startup entrypoint, not a replacement
+
+The backend container entrypoint (`backend/docker-entrypoint.sh`) already runs
+`alembic upgrade head` on every container start — that is the **safety net**
+for the case where someone runs `docker compose up` without `make` (or restarts
+a single container). Removing it would break that path.
+
+`make migrate` is a **separate, explicit target** that shells out to
+`docker compose exec -T backend alembic upgrade head` against whatever backend
+container is currently up. It exists for two reasons the entrypoint does not
+cover:
+
+- **Visibility/control for developers**: a developer working against an
+  already-running stack (e.g. after pulling a migration somebody else wrote)
+  can run `make migrate` on demand without restarting the backend container.
+- **CI/ scripting**: an automation step can invoke `make migrate` explicitly
+  and see its exit code, rather than relying on the container's internal
+  retry loop.
+
+Re-running `make migrate` against an already-migrated database is a no-op:
+Alembic's `upgrade head` is idempotent — verified by running it twice
+back-to-back against the `make demo` stack, both runs exited cleanly with no
+duplicate schema changes.
+
+### 2. `make test-frontend` is a thin wrapper around the existing CI suite
+
+`.github/workflows/frontend-unit-tests.yml` already defines and runs the
+frontend unit test suite in CI. The only gap was that there was no equivalent
+one-command way to run that same suite locally. `make test-frontend` closes
+that gap **without duplicating or reinventing the suite**:
+
+- It runs the **exact same command** the workflow runs: `cd frontend && npm ci && npm run test:coverage`.
+- It does **not** add, edit, or extend any test files (`.test.ts`/`.test.tsx`).
+- It does **not** modify the GitHub Actions workflow file.
+- It does **not** add Playwright/Cypress/E2E tests.
+
+**Local/CI parity caveats:**
+- The workflow pins `NODE_VERSION: 22` via `actions/setup-node`. Local runs
+  therefore require Node 22 installed on the host to match CI exactly.
+- The workflow runs `npm audit --audit-level=high` (with
+  `continue-on-error: true`) and `npm run build` (tsc + vite build) **before**
+  the tests; `make test-frontend` runs only `npm ci && npm run test:coverage`.
+  That is intentional — this follow-up is about exposing the existing test
+  suite, not replicating the workflow's full CI matrix (audit + build check +
+test) in one local target. Developers who want the full CI parity locally can
+  run the three steps manually: `cd frontend && npm ci && npm run build && npm run lint && npm run test:coverage`.
+- The workflow uploads the coverage report as an artifact; `make test-frontend`
+  prints the coverage summary to stdout and leaves `frontend/coverage/` on disk
+  (same output, no upload).
+
+### 3. `update-requirements` — re-pin from current specs (option a), not bump-to-latest (option b)
+
+**Interpretation chosen: (a) re-resolve/re-pin against the existing version
+constraints — the safer default.** This is explicitly **not** "bump every
+dependency to latest compatible version."
+
+- **Backend**: `pip-compile requirements.in -o requirements.txt` re-resolves
+  the transitive closure **within the existing `==` constraints in
+  `requirements.in`** and writes a fresh pinfile. If `requirements.in` says
+  `SQLAlchemy==2.0.52`, the regenerated `requirements.txt` still pins
+  `SQLAlchemy==2.0.52` (plus whatever transitive versions the resolver picks
+  **now** for the unpinned dependencies). This is what the project already
+  documents in `Notes.md` §6.0 as the manual workflow; `make
+  update-requirements` just makes it a target.
+- **Frontend**: `cd frontend && npm install` re-generates
+  `package-lock.json` from `package.json`'s semver ranges — it does **not**
+  bump to latest unless a range already allows it.
+
+**Why (a) and not (b) this close to a demo:** bumping everything to latest
+would be a large risky change right before a presentation — it could pull in a
+breaking semver-major, change behaviour, or introduce a new vulnerability. The
+lockfiles were already slightly stale (drifted since Milestones 2–7 added
+packages incrementally); re-pinning against the existing constraints brings them
+back into sync with what the resolver would pick today from the same constraints,
+without the risk of a mass-bump. If a developer actually wants a mass-bump, that
+is a separate, deliberate action (edit `requirements.in` / `package.json`
+version ranges first, then re-pin).
+
+**Verification performed:**
+- Ran `make update-requirements` — both lockfiles regenerated successfully.
+- Rebuilt the full stack with `docker compose build --no-cache` from the
+  regenerated lockfiles — both images built and the stack came up via `make demo`.
+- Ran `make test-frontend` against the rebuilt stack — all 106 tests in 14
+  test files still pass.
+
+**Gaps / risks carried forward:**
+- `update-requirements` is a **manual target for now** — it does **not** run
+  automatically in CI. A future step could add it to the workflow (e.g. a PR
+  check that fails if `requirements.txt` or `package-lock.json` is out of date
+  with respect to their source specs), but that is not part of this pass.
+- The regenerated `requirements.txt` is version-pinned but **not hash-pinned**
+  (same caveat as before — `pip-compile --generate-hashes` timed out on this
+  network). Re-adding hash-pinning on a healthier network is a trivial follow-up.
+- The regenerated `package-lock.json` was already up to date (npm reported
+  "up to date"), so no actual version changes landed — the target is verified
+  to be safe to run, not verified to have changed anything, which is the correct
+  outcome for a re-pin (not bump) pass.
+
+## Retrofit — Alembic multiple-heads migration error (2026-09-05)
+
+**Root cause:** the migration history branched into **two roots**. `bab69a9`
+(2026-08-12) committed `405c749934b5` (initial schema, plural names, integer
+`id`s), and `9d53b91` committed `60ec8bad202b` on top of it — the canonical
+chain that matches the current `app/models/`. Independently,
+`feature/alembic-migration-seed` (merged as `ba48341`, 2026-08-25) ran a
+`alembic revision --autogenerate` against a **superseded** UUID-based model
+design and committed `ff0a486902ce` — a second initial migration with
+`down_revision=None` (singular table names, `*_id` UUID primary keys). Both
+roots were merged into `develop`, so `alembic heads` reported two heads and
+`alembic upgrade head` refused to pick one. The backend entrypoint retried
+10× and the demo healthcheck timed out. The two generation runs branched off
+the same empty base at different times without the later author syncing
+`develop` first — the classic "two people generated a migration from a
+non-current checkout" race.
+
+**Resolution:** `alembic merge` was **not** sufficient on its own. The two
+branches genuinely conflicted — they both create the same 11 logical entities
+under different table names and primary-key types (`users`/int `id` vs
+`user`/UUID `user_id`); a bare merge would have left **both** schemas in the
+database (22 tables). The fix therefore used the merge-plus-reconcile pattern:
+
+- `13049a14c583` — `alembic merge -m "merge heads" 60ec8bad202b ff0a486902ce`;
+  a pure mergepoint over both heads, no schema change.
+- `3226c58aebdc` — conflict-resolution migration **on top of the merge** that
+  drops the 11 stale singular-UUID tables (`ff0a486902ce`'s schema, children
+  first) and their orphaned enum types. The canonical `405c749934b5` →
+  `60ec8bad202b` schema is left untouched.
+
+The final history is a single line: `405c749934b5 → 60ec8bad202b` and
+`ff0a486902ce` both feed the mergepoint, then `3226c58aebdc` is the sole head.
+`alembic upgrade head` against a fresh `db` volume now produces exactly the
+Milestone-1-DoD schema: 11 tables, 17 foreign keys, and the 11 canonical enum
+types.
+
+**Guardrail added to prevent recurrence:**
+- `backend/docker-entrypoint.sh` — pre-flight `alembic heads` check that exits
+  `1` with a merge instruction if more than one head is reported (runs before
+  the migration retry loop; `alembic heads` needs no DB connection, so it
+  cannot race the database warm-up).
+- `Makefile` — `make check-migrations` target: same check for host-side
+  authoring, fails loudly unless exactly one head exists.
+- **Why this stops the silent retry:** today's failure mode was the entrypoint
+  retrying a would-be-impossible `upgrade head` 10× and the healthcheck timing
+  out. The pre-flight check turns that into an immediate, explicit error —
+  and, for anyone about to commit a new migration, `make check-migrations`
+  catches a branch before it lands. No migration file was deleted and nothing
+  was rewritten by hand; the fix is a normal merge revision plus a
+  reconciliation revision, exactly the Alembic-recommended path.
+
+---
+
+## Bug fix — login succeeds but never redirects to the role portal (2026-09-06)
+
+**Symptom (as reported):** the web app accepts valid login credentials — the
+`POST /auth/login` request succeeds, no error is shown — but the user is never
+redirected to the portal appropriate to their role. They sit on the login
+screen (or the generic LoginSuccess page) instead of landing on their
+User/Officer/Admin portal.
+
+**Root cause — failure mode (c), frontend routing/state bug. Confirmed by
+reproduction, not guesswork.** The redirect chain breaks because the React
+auth context is never told that a session exists:
+
+1. `AuthProvider` initialises its `session` state **once** at app mount from
+   `localStorage` (`useState(() => getAuthSession())`). On a fresh visit to
+   `/login` there is no token, so `session = null`.
+2. `Login.tsx` posts to `/auth/login`, gets `200` + `access_token`, stores it
+   in `localStorage` — and **navigates on**. Nothing updates the
+   `AuthContext`, whose `session` remains `null`. The context only ever
+   exposes `logout` (clears to `null`); there was no way to *set* a session
+   after mount.
+3. `LoginSuccess` reads the token back from `localStorage` directly (that is
+   why the DoD claims panel renders correctly and the decoded `Role` looks
+   fine), then auto-redirects to `/{portal}` after 4 s.
+4. The portal route is wrapped in `RequireRole`, which reads
+   `useAuth().session` — still `null` — so it renders
+   `<Navigate to="/login" replace />`. The user is bounced back to the login
+   screen.
+
+So login “succeeds” end-to-end at the HTTP layer (200, token stored, claims
+readable) yet the router can never act on the role: the state the guards read
+was never populated. This is exactly the class of bug where the token/claims
+path and the role checks are both healthy but nothing downstream trusts the
+result.
+
+**Why the original Module 7 / 8 DoD verification did not catch it:** both
+milestones’ Review notes state Chrome was **not installed** in the
+environment, so the DoD was verified via curl flows, compiled-module tests
+against the live API, and dev-server checks — **not a real in-browser login
+click-through** (see “Caveat”, Module 7 §Verification notes, and Module 8
+“Browser click-through was not verified”). The unit-style checks that *did*
+run exercised `getAuthSession`/`RequireRole` in isolation or with a token
+pre-seeded in `localStorage` before the app mounted — which is precisely the
+one scenario that works, because `AuthProvider` picks the session up at mount.
+The failing path only exists when the token appears *after* the provider has
+already mounted (i.e. a normal login), so no automated or manual check that
+skipped a full browser login could see it.
+
+**The fix (frontend only, `fix/frontend-login-redirect`):**
+
+- `frontend/src/lib/auth-context.tsx` — added a `login(token)` method to
+  `AuthContext` that stores the token **and** re-reads it through the
+  existing shape-checked `getAuthSession()` to set the context `session`.
+  Routing `login` through the shape check (valid numeric `exp`/`UserID`,
+  known `Role`) means a tampered or malformed token still cannot establish a
+  session — the Module 7 DoD's anti-tamper property is preserved, not
+  loosened.
+- `frontend/src/routes/auth/Login.tsx` — on successful `POST /auth/login`,
+  call `login(access_token)` (context) instead of the bare `storeToken(...)`
+  helper, so the guard state and storage can never disagree again.
+
+No backend change was needed. #13 and #16 were re-verified by re-running
+their original DoDs, not assumed to hold (see below).
+
+**Why scoped this way:** the failure was isolated to the session-state
+handoff between storage and the router guards. Fixing it in the context (the
+single place guards already read) rather than, say, making `RequireRole`
+re-read `localStorage` on every render keeps one source of truth for the
+session and preserves the existing logout/401 behaviour. No role check was
+weakened — `RequireRole` and `require_role` are untouched.
+
+**DoD re-verification (all three roles, against the running local stack):**
+
+- **#13** — curl login for `User` (`ada@example.com`), `Officer`
+  (`officer@example.com`), `Administrator` (`admin@example.com`) each returns
+  `200` and an `access_token` whose decoded payload contains `UserID` (int)
+  and `Role` (`"User"` / `"Officer"` / `"Administrator"` — exact `Entities.md`
+  spellings). ✅
+- **#16** — `GET /items/lost` (the `require_role`-gated route outside Auth):
+  401 with no token, 200 with any active-role token. `GET /auth/test-protected`
+  (Administrator-only): 401 no token, 403 for `User` and `Officer`, 200 for
+  `Administrator`. ✅
+- **Module 7 issue-2 DoD (browser)** — real headless-Chrome logins as each
+  seeded account now land on the correct portal (`/user` Student portal,
+  `/officer` Lost & Found Officer portal, `/admin` Administration portal).
+  Cross-role URL tampering bounces correctly (a User forced to `/officer` or
+  `/admin` is redirected back to `/user`; an Administrator may open `/officer`
+  per the superset rule). A forged payload (Role rewritten to
+  `Administrator` without a valid signature) is rejected: `getAuthSession`
+  returns `null`, the token is cleared, and the app lands on `/login`.
+  Sessions persist across a full page reload for each role; logout clears the
+  token and returns to `/login`. ✅
+
+**Risks / gaps surfaced (not fixed here):**
+
+- **No automated test guards this exact path.** The frontend unit-test suite
+  lives on an unmerged branch (`test/frontend-unit-tests`) and its
+  `RequireRole`/session tests render guards with a mocked context or a token
+  present at mount — neither exercises a real login-then-redirect against the
+  live API. A regression test that logs in via the real `/auth/login` and
+  asserts the URL reaches the role portal (as done manually here) is the
+  missing guard. Flagged as a follow-up, not silently left.
+- **The browser DoD for Modules 7 and 8 was never executed at the time** —
+  this is the second time a frontend-only bug has been able to ship past
+  those DoDs because verification relied on module-level checks rather than a
+  browser. Running the click-through (or the regression test above) should be
+  part of the Module 8 smoke-test gate.
+- **No change to `Notes.md` claim shape or endpoint behaviour was needed** —
+  the documented token claims (`UserID`, `Role`), endpoints, and
+  `require_role` contract were accurate; only the frontend session wiring was
+  broken. `Notes.md` §13.3 was corrected in place to document the
+  now-authoritative login step (token stored **and** context session
+  established).
