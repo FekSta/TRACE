@@ -7,14 +7,11 @@ from a single import.
 
 import uuid
 
-from sqlalchemy import DateTime, func
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
     """Base class for every TRACE model."""
-    pass
 
 
 def generate_uuid() -> uuid.UUID:

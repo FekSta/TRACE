@@ -19,12 +19,6 @@ from app.db import get_db
 from app.models import FoundItem, LostItem, User
 from app.models.enums import FoundItemStatus, LostItemStatus
 from app.modules.auth.deps import get_current_user
-# Module 4: matching runs in a BackgroundTask after the response is sent, so
-# item creation never blocks on the scoring pass (see matching/service.py).
-from app.modules.matching.service import (
-    run_matching_for_found_item,
-    run_matching_for_lost_item,
-)
 from app.modules.items.schemas import (
     FoundItemCreate,
     FoundItemResponse,
@@ -37,6 +31,13 @@ from app.modules.items.service import (
     ensure_active_category,
     get_scoped,
     is_staff,
+)
+
+# Module 4: matching runs in a BackgroundTask after the response is sent, so
+# item creation never blocks on the scoring pass (see matching/service.py).
+from app.modules.matching.service import (
+    run_matching_for_found_item,
+    run_matching_for_lost_item,
 )
 
 router = APIRouter(tags=["items"])
