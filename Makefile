@@ -6,7 +6,7 @@
 # demo seed automatically inside the backend container, and waits until the
 # API answers /health. See Tutorial.md for URLs and logins.
 
-.PHONY: demo seed migrate up down clean logs ps check-migrations test-frontend update-requirements
+.PHONY: demo seed up down clean logs ps check-migrations migrate-backend update-requirements test-frontend
 
 demo: ## Build, start, migrate and seed the full stack, then wait until ready
 	docker compose up --build -d
@@ -20,9 +20,6 @@ demo: ## Build, start, migrate and seed the full stack, then wait until ready
 	  fi; \
 	  sleep 2; \
 done
-	@echo ""
-	@echo "Running migrations (idempotent — safe to re-run)…"
-	make migrate
 	@echo ""
 	@echo "Running demo seed (idempotent)…"
 	make seed
@@ -78,17 +75,22 @@ check-migrations: ## Fail loudly unless alembic migration history has exactly on
 migrate-backend: ## Run Alembic migrations against the running backend container (idempotent — safe to re-run)
 	docker compose exec -T backend alembic upgrade head
 
-update-requirements: ## Regenerate pinned dependency lockfiles from current specs (re-pin, not bump-to-latest)
+update-requirements-backend: ## Regenerate pinned backend requirements.txt from requirements.in (re-pin, not bump-to-latest)
 	@echo "=== Backend: regenerating requirements.txt from requirements.in ==="
 	cd backend && test -x .venv/bin/pip-compile || { echo "ERROR: pip-tools not found in backend/.venv — run 'cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools' first"; exit 1; }
 	cd backend && .venv/bin/pip-compile requirements.in -o requirements.txt
 	@echo "Backend requirements.txt regenerated."
 	@echo ""
+	@echo "Done. Rebuild the backend (docker compose build backend) and re-test before committing."
+
+update-requirements-frontend: ## Regenerate frontend package-lock.json from package.json (re-pin, not bump-to-latest)
 	@echo "=== Frontend: regenerating package-lock.json from package.json ==="
 	cd frontend && npm install
 	@echo "Frontend package-lock.json regenerated."
 	@echo ""
-	@echo "Done. Rebuild the stack (docker compose build) and re-test before committing."
+	@echo "Done. Rebuild the frontend (docker compose build frontend) and re-test before committing."
+
+update-requirements: update-requirements-backend update-requirements-frontend ## Regenerate both backend and frontend pinned dependency lockfiles
 
 test-frontend: ## Run the existing frontend unit test suite locally (same suite as .github/workflows/frontend-unit-tests.yml)
 	cd frontend && npm ci && npm run test:coverage
