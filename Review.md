@@ -494,3 +494,118 @@ types.
   catches a branch before it lands. No migration file was deleted and nothing
   was rewritten by hand; the fix is a normal merge revision plus a
   reconciliation revision, exactly the Alembic-recommended path.
+
+---
+
+## Bug fix — login succeeds but never redirects to the role portal (2026-09-06)
+
+**Symptom (as reported):** the web app accepts valid login credentials — the
+`POST /auth/login` request succeeds, no error is shown — but the user is never
+redirected to the portal appropriate to their role. They sit on the login
+screen (or the generic LoginSuccess page) instead of landing on their
+User/Officer/Admin portal.
+
+**Root cause — failure mode (c), frontend routing/state bug. Confirmed by
+reproduction, not guesswork.** The redirect chain breaks because the React
+auth context is never told that a session exists:
+
+1. `AuthProvider` initialises its `session` state **once** at app mount from
+   `localStorage` (`useState(() => getAuthSession())`). On a fresh visit to
+   `/login` there is no token, so `session = null`.
+2. `Login.tsx` posts to `/auth/login`, gets `200` + `access_token`, stores it
+   in `localStorage` — and **navigates on**. Nothing updates the
+   `AuthContext`, whose `session` remains `null`. The context only ever
+   exposes `logout` (clears to `null`); there was no way to *set* a session
+   after mount.
+3. `LoginSuccess` reads the token back from `localStorage` directly (that is
+   why the DoD claims panel renders correctly and the decoded `Role` looks
+   fine), then auto-redirects to `/{portal}` after 4 s.
+4. The portal route is wrapped in `RequireRole`, which reads
+   `useAuth().session` — still `null` — so it renders
+   `<Navigate to="/login" replace />`. The user is bounced back to the login
+   screen.
+
+So login “succeeds” end-to-end at the HTTP layer (200, token stored, claims
+readable) yet the router can never act on the role: the state the guards read
+was never populated. This is exactly the class of bug where the token/claims
+path and the role checks are both healthy but nothing downstream trusts the
+result.
+
+**Why the original Module 7 / 8 DoD verification did not catch it:** both
+milestones’ Review notes state Chrome was **not installed** in the
+environment, so the DoD was verified via curl flows, compiled-module tests
+against the live API, and dev-server checks — **not a real in-browser login
+click-through** (see “Caveat”, Module 7 §Verification notes, and Module 8
+“Browser click-through was not verified”). The unit-style checks that *did*
+run exercised `getAuthSession`/`RequireRole` in isolation or with a token
+pre-seeded in `localStorage` before the app mounted — which is precisely the
+one scenario that works, because `AuthProvider` picks the session up at mount.
+The failing path only exists when the token appears *after* the provider has
+already mounted (i.e. a normal login), so no automated or manual check that
+skipped a full browser login could see it.
+
+**The fix (frontend only, `fix/frontend-login-redirect`):**
+
+- `frontend/src/lib/auth-context.tsx` — added a `login(token)` method to
+  `AuthContext` that stores the token **and** re-reads it through the
+  existing shape-checked `getAuthSession()` to set the context `session`.
+  Routing `login` through the shape check (valid numeric `exp`/`UserID`,
+  known `Role`) means a tampered or malformed token still cannot establish a
+  session — the Module 7 DoD's anti-tamper property is preserved, not
+  loosened.
+- `frontend/src/routes/auth/Login.tsx` — on successful `POST /auth/login`,
+  call `login(access_token)` (context) instead of the bare `storeToken(...)`
+  helper, so the guard state and storage can never disagree again.
+
+No backend change was needed. #13 and #16 were re-verified by re-running
+their original DoDs, not assumed to hold (see below).
+
+**Why scoped this way:** the failure was isolated to the session-state
+handoff between storage and the router guards. Fixing it in the context (the
+single place guards already read) rather than, say, making `RequireRole`
+re-read `localStorage` on every render keeps one source of truth for the
+session and preserves the existing logout/401 behaviour. No role check was
+weakened — `RequireRole` and `require_role` are untouched.
+
+**DoD re-verification (all three roles, against the running local stack):**
+
+- **#13** — curl login for `User` (`ada@example.com`), `Officer`
+  (`officer@example.com`), `Administrator` (`admin@example.com`) each returns
+  `200` and an `access_token` whose decoded payload contains `UserID` (int)
+  and `Role` (`"User"` / `"Officer"` / `"Administrator"` — exact `Entities.md`
+  spellings). ✅
+- **#16** — `GET /items/lost` (the `require_role`-gated route outside Auth):
+  401 with no token, 200 with any active-role token. `GET /auth/test-protected`
+  (Administrator-only): 401 no token, 403 for `User` and `Officer`, 200 for
+  `Administrator`. ✅
+- **Module 7 issue-2 DoD (browser)** — real headless-Chrome logins as each
+  seeded account now land on the correct portal (`/user` Student portal,
+  `/officer` Lost & Found Officer portal, `/admin` Administration portal).
+  Cross-role URL tampering bounces correctly (a User forced to `/officer` or
+  `/admin` is redirected back to `/user`; an Administrator may open `/officer`
+  per the superset rule). A forged payload (Role rewritten to
+  `Administrator` without a valid signature) is rejected: `getAuthSession`
+  returns `null`, the token is cleared, and the app lands on `/login`.
+  Sessions persist across a full page reload for each role; logout clears the
+  token and returns to `/login`. ✅
+
+**Risks / gaps surfaced (not fixed here):**
+
+- **No automated test guards this exact path.** The frontend unit-test suite
+  lives on an unmerged branch (`test/frontend-unit-tests`) and its
+  `RequireRole`/session tests render guards with a mocked context or a token
+  present at mount — neither exercises a real login-then-redirect against the
+  live API. A regression test that logs in via the real `/auth/login` and
+  asserts the URL reaches the role portal (as done manually here) is the
+  missing guard. Flagged as a follow-up, not silently left.
+- **The browser DoD for Modules 7 and 8 was never executed at the time** —
+  this is the second time a frontend-only bug has been able to ship past
+  those DoDs because verification relied on module-level checks rather than a
+  browser. Running the click-through (or the regression test above) should be
+  part of the Module 8 smoke-test gate.
+- **No change to `Notes.md` claim shape or endpoint behaviour was needed** —
+  the documented token claims (`UserID`, `Role`), endpoints, and
+  `require_role` contract were accurate; only the frontend session wiring was
+  broken. `Notes.md` §13.3 was corrected in place to document the
+  now-authoritative login step (token stored **and** context session
+  established).
