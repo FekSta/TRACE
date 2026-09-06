@@ -1,13 +1,11 @@
 import os
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
-from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # TRACE: register all 11 models on Base.metadata so autogenerate sees them.
 import app.models  # noqa: F401
+from alembic import context
 from app.db import Base
 
 # this is the Alembic Config object, which provides

@@ -17,7 +17,6 @@ from app.models.enums import (
     RelatedEntity,
 )
 
-
 # --- Category ---------------------------------------------------------------
 
 class CategoryCreate(BaseModel):

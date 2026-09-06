@@ -15,13 +15,20 @@ writes commit together or none do. Each mutating step also writes exactly one
 ``AuditLog`` row (via ``audit``) — a Module 5 hard requirement.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, Claim, CollectionRecord, Match, User, VerificationRecord
+from app.models import (
+    AuditLog,
+    Claim,
+    CollectionRecord,
+    Match,
+    User,
+    VerificationRecord,
+)
 from app.models.enums import (
     ClaimStatus,
     ClaimVerificationStatus,
@@ -31,7 +38,6 @@ from app.models.enums import (
     VerificationResult,
 )
 from app.modules.items.service import is_staff  # reuse Module 3 role logic
-
 
 # --- Audit -------------------------------------------------------------------
 
@@ -244,7 +250,7 @@ def collect_claim(
         )
 
     claim.status = ClaimStatus.COMPLETED
-    claim.collection_date = datetime.now(timezone.utc)
+    claim.collection_date = datetime.now(UTC)
     claim.lost_item.status = LostItemStatus.CLOSED
     claim.found_item.status = FoundItemStatus.RETURNED
 

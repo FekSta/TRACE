@@ -8,7 +8,7 @@
   `exp`) — see `Review.md` §Module 2 for the minimal-vs-rich trade-off.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -18,11 +18,11 @@ from app import config
 from app.models import User
 
 __all__ = [
-    "hash_password",
-    "verify_password",
+    "InvalidTokenError",
     "create_access_token",
     "decode_access_token",
-    "InvalidTokenError",
+    "hash_password",
+    "verify_password",
 ]
 
 
@@ -59,7 +59,7 @@ def create_access_token(user: User) -> str:
     informational for clients (e.g. frontend portal selection); authorization
     always re-checks the live role from the database (see `deps.py`).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user.id),
         "UserID": user.id,

@@ -12,14 +12,18 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import User
 from app.models.enums import UserRole, UserStatus
+from app.modules.auth.deps import require_role
 from app.modules.auth.schemas import (
     LoginRequest,
     RegisterRequest,
     TokenResponse,
     UserResponse,
 )
-from app.modules.auth.deps import require_role
-from app.modules.auth.security import create_access_token, hash_password, verify_password
+from app.modules.auth.security import (
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
