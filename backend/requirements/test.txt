@@ -1,0 +1,5 @@
+# TRACE backend test dependencies
+# Installed by CI from backend/requirements/local.txt + this file
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
