@@ -1527,6 +1527,117 @@ npm run dev            # http://localhost:5173 (replaces the containerized build
   (Administrator). Self-registration always creates a User.
 - Typecheck + production build: `npm run build` (`tsc -b && vite build`).
 
+### 13.7 Frontend testing
+
+The frontend has a unit/component test suite using **Vitest** + **React Testing
+Library** (RTL), matching the Vite toolchain already in use. Tests run in a
+`jsdom` environment with `@testing-library/jest-dom` matchers wired via a setup
+file.
+
+**Running tests locally:**
+
+```bash
+cd frontend
+npm run test            # single run
+npm run test:watch      # watch mode (re-runs on file changes)
+npm run test:coverage   # run with v8 coverage report
+```
+
+Or via Make (requires Node 22 to match CI):
+
+```bash
+make test-frontend      # runs cd frontend && npm ci && npm run test:coverage
+```
+
+**What is covered (14 test files, 106 tests as of 2026-08-31):**
+
+| Area | Test file(s) | What it pins down |
+|------|--------------|-------------------|
+| **Auth/session** | `src/lib/auth.test.ts` | `decodeToken`, `isExpired`, `isValidPayload`, `portalForRole`, `storeToken`/`getStoredToken`/`clearToken`, `getAuthSession` (28 tests) |
+| **Shared components** | `src/components/ui/*.test.tsx` (9 files) | Button, Card, StatusBadge, Modal, Field, EmptyState, Loading, StatCard, Toast — rendering, variants, props, user interactions |
+| **Portal gating** | `src/routes/guards.test.tsx` | `RequireRole` with User/Officer/Administrator roles, correct portal redirect, cross-role tamper rejection (9 tests) |
+| **Core portal flows** | `src/routes/user/ReportItem.test.tsx`, `src/routes/officer/ReviewClaims.test.tsx`, `src/routes/admin/Categories.test.tsx` | Report form validation/submit, claim approve/reject modals and POST, category CRUD table (28 tests) |
+
+**What is NOT covered (by design — out of scope for this retrofit):**
+
+- Portal wrapper pages (`UserPortal`, `OfficerPortal`, `AdminPortal`) — thin
+  `useState` wrappers, low test priority
+- Auth pages (Login, Register) — form-heavy, lower priority than core logic
+  and design-system components
+- Dashboard pages — data-heavy, requires more mock setup
+- `AppShell` — needs full portal context to render
+- E2E / Playwright / Cypress — not in scope; unit/component level only
+
+**CI workflow:** `.github/workflows/frontend-unit-tests.yml` runs build
+(`tsc -b && vite build`), lint (`oxlint`), and `test:coverage` on push/PR to
+`main`/`develop`, path-filtered to `frontend/**`. Coverage threshold is 35%
+lines/statements (v8 provider).
+
+### 13.8 Backend testing
+
+The backend has a pytest suite split into two, intentionally separated
+surfaces (see `backend/tests/conftest.py` and `issues/backend-unit-test.md`):
+
+- **Unit / fast** (`-m "not integration"`) — SQLite in-memory DB
+  (`StaticPool`, fresh schema per test). Used by the Auth module tests plus the
+  pure-function tests in `matching/utils/similarity.py` and
+  `auth/security.py`. No external services.
+- **Integration** (`@pytest.mark.integration`) — a real local Postgres
+  (`trace_test`, same credentials as the compose `db` container). Used by
+  Items, Matching, Claims, and Notifications module tests that exercise the
+  full FastAPI + SQLAlchemy stack, including Module 4's matching
+  `BackgroundTask` runner and Module 6's notification triggers (both open
+  their own sessions via `app.db.SessionLocal`). Per-test schema
+  drop/create gives hermetic isolation.
+
+**Running tests locally:**
+
+```bash
+cd backend
+
+# fast unit pass (no Postgres needed)
+.venv/bin/python -m pytest --no-cov -m "not integration"
+
+# full coverage pass (needs Postgres: docker compose up -d db)
+.venv/bin/python -m pytest --cov=app --cov-report=term-missing
+
+# a single integration module
+.venv/bin/python -m pytest tests/test_claims.py -v
+```
+
+`backend/pytest.ini` sets `testpaths = tests`. The `trace_test` database is
+created automatically by `conftest.py` if it does not exist; it must not be
+the compose `trace` database (the suite drops/recreates its schema per test).
+
+**CI workflow:** `.github/workflows/backend-unit-tests.yml` runs on push/PR to
+`main`/`develop`, path-filtered to `backend/**` (+ the workflow file itself).
+A Postgres 16 service container stands in for the compose `db` container; the
+job runs the fast `not integration` pass first, then a full `--cov=app`
+coverage pass, and uploads `coverage.xml` as an artifact. Install is pip-based
+(`requirements.txt` + pytest/pytest-asyncio/pytest-cov) — TRACE has no `uv`.
+No Mailpit service is needed: the notification SMTP-failure tests force
+`email_backend.send` to raise via monkeypatch and assert on DB rows.
+
+**What is covered (5 test files, 58 tests, 89% lines as of 2026-09-06):**
+
+| Module | Test file(s) | What it pins down |
+|--------|--------------|-------------------|
+| **Auth (M2)** | `tests/test_auth.py` (17, unit) | bcrypt hashing/verify, JWT claims (`UserID`/`Role`/`sub`), `require_role` 401/403 per role, register 201/400/409, login 200/401, case-insensitive email, suspended-user 403 |
+| **Items (M3)** | `tests/test_items.py` (11, int) | lost/found CRUD, active-category-only 400, owner vs cross-user vs officer/admin scoping (404/200), unauth 401, invalid status enum 422 |
+| **Matching (M4)** | `tests/test_matching.py` (8 unit + 6 int) | `compute_similarity` threshold/decay/missing-field cases; background finder creates `Suggested` match on POST, user-vs-officer scoping, accept → claim + status flip, reject → `Rejected`, 409 re-resolve |
+| **Claims (M5)** | `tests/test_claims.py` (12, int) | accept→claim (Pending/Active), verify transitions with `Passed`/`Failed` + `ClaimApproved`/`ClaimRejected` audit rows, Pending-result rule, double-verify 400, collect-requires-approved 400, `Completed`/`Closed`, atomic rollback |
+| **Notifications (M6)** | `tests/test_notifications.py` (4, int) | `Match suggested`/`Claim submitted`/`Claim approved` rows persist even when SMTP delivery fails; `NotificationType` enums |
+
+**What is NOT covered (by design — out of scope for this retrofit):**
+
+- Category admin REST endpoints (create/update/archive/restore) — only the
+  inactive-category 400 path is exercised (`categories.py` at 34%)
+- Uploads/storage endpoints — async multipart uploads and the pluggable
+  storage backend (`uploads.py` 48%, `storage.py` 71%)
+- Dead alternate modules `app/database.py` and `app/models/base.py` (never
+  wired into `main.py`) — intentional 0%
+- `app/db.py` non-default engine-config paths (67%)
+
 ---
 
 ## 14. Module status

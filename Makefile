@@ -1,4 +1,4 @@
-# TRACE — demo kit Makefile (Module 8).
+# TRACE — demo kit Makefile (Module 8). 
 #
 # `make demo` is the ONE command that brings up the whole system from a clean
 # checkout: it builds the four images, starts them (db first — the backend
@@ -6,7 +6,11 @@
 # demo seed automatically inside the backend container, and waits until the
 # API answers /health. See Tutorial.md for URLs and logins.
 
-.PHONY: demo seed up down clean logs ps check-migrations migrate-backend update-requirements test-frontend
+.PHONY: demo seed up down clean logs ps \
+	check-migrations migrate-backend \
+	update-requirements-backend update-requirements-frontend update-requirements \
+	test-frontend test-backend test \
+	lint-backend lint-backend-fix
 
 demo: ## Build, start, migrate and seed the full stack, then wait until ready
 	docker compose up --build -d
@@ -94,3 +98,35 @@ update-requirements: update-requirements-backend update-requirements-frontend ##
 
 test-frontend: ## Run the existing frontend unit test suite locally (same suite as .github/workflows/frontend-unit-tests.yml)
 	cd frontend && npm ci && npm run test:coverage
+
+test-backend: ## Run the backend unit + coverage test suite locally (same suite as .github/workflows/backend-unit-tests.yml)
+	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt' first"; exit 1; }
+	cd backend && .venv/bin/python -m pip install --quiet pytest pytest-asyncio pytest-cov
+	@echo "Backend tests need a reachable Postgres test DB (trace_test) on localhost:5432."
+	@echo "If one isn't running: docker compose up -d db  (then create/point TEST_DATABASE_URL at a trace_test DB)"
+	cd backend && \
+	  JWT_SECRET=ci-only-change-this-development-secret \
+	  EMAIL_BACKEND=smtp \
+	  SMTP_HOST=localhost \
+	  SMTP_PORT=25 \
+	  TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql+psycopg://trace:trace_local_password@localhost:5432/trace_test} \
+	  .venv/bin/python -m pytest --no-cov -v -m "not integration"
+	cd backend && \
+	  JWT_SECRET=ci-only-change-this-development-secret \
+	  EMAIL_BACKEND=smtp \
+	  SMTP_HOST=localhost \
+	  SMTP_PORT=25 \
+	  TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql+psycopg://trace:trace_local_password@localhost:5432/trace_test} \
+	  .venv/bin/python -m pytest -v --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml
+
+test: test-backend test-frontend ## Run both backend and frontend test suites locally
+
+lint-backend: ## Lint (and format-check) the backend with ruff
+	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt' first"; exit 1; }
+	cd backend && .venv/bin/pip install ruff
+	cd backend && .venv/bin/ruff check . --statistics
+	cd backend && .venv/bin/ruff format --check .
+
+lint-backend-fix: ## Auto-fix lint + formatting issues in the backend
+	cd backend && .venv/bin/ruff check . --fix
+	cd backend && .venv/bin/ruff format .

@@ -444,400 +444,194 @@ a silent guess.
 
 ---
 
-## Module 8 follow-ups — Makefile hardening (2026-09-06)
-
-Three follow-ups hardening the existing `make demo` setup from the
-"Seed script + `make demo` target" issue (already closed). None of these
-reopen that issue's scope — they add developer ergonomics and dependency
-hygiene on top of the working demo kit.
-
-### 1. Why `make migrate` is additive to the startup entrypoint, not a replacement
-
-The backend container entrypoint (`backend/docker-entrypoint.sh`) already runs
-`alembic upgrade head` on every container start — that is the **safety net**
-for the case where someone runs `docker compose up` without `make` (or restarts
-a single container). Removing it would break that path.
-
-`make migrate` is a **separate, explicit target** that shells out to
-`docker compose exec -T backend alembic upgrade head` against whatever backend
-container is currently up. It exists for two reasons the entrypoint does not
-cover:
-
-- **Visibility/control for developers**: a developer working against an
-  already-running stack (e.g. after pulling a migration somebody else wrote)
-  can run `make migrate` on demand without restarting the backend container.
-- **CI/ scripting**: an automation step can invoke `make migrate` explicitly
-  and see its exit code, rather than relying on the container's internal
-  retry loop.
-
-Re-running `make migrate` against an already-migrated database is a no-op:
-Alembic's `upgrade head` is idempotent — verified by running it twice
-back-to-back against the `make demo` stack, both runs exited cleanly with no
-duplicate schema changes.
-
-### 2. `make test-frontend` is a thin wrapper around the existing CI suite
-
-`.github/workflows/frontend-unit-tests.yml` already defines and runs the
-frontend unit test suite in CI. The only gap was that there was no equivalent
-one-command way to run that same suite locally. `make test-frontend` closes
-that gap **without duplicating or reinventing the suite**:
-
-- It runs the **exact same command** the workflow runs: `cd frontend && npm ci && npm run test:coverage`.
-- It does **not** add, edit, or extend any test files (`.test.ts`/`.test.tsx`).
-- It does **not** modify the GitHub Actions workflow file.
-- It does **not** add Playwright/Cypress/E2E tests.
-
-**Local/CI parity caveats:**
-- The workflow pins `NODE_VERSION: 22` via `actions/setup-node`. Local runs
-  therefore require Node 22 installed on the host to match CI exactly.
-- The workflow runs `npm audit --audit-level=high` (with
-  `continue-on-error: true`) and `npm run build` (tsc + vite build) **before**
-  the tests; `make test-frontend` runs only `npm ci && npm run test:coverage`.
-  That is intentional — this follow-up is about exposing the existing test
-  suite, not replicating the workflow's full CI matrix (audit + build check +
-test) in one local target. Developers who want the full CI parity locally can
-  run the three steps manually: `cd frontend && npm ci && npm run build && npm run lint && npm run test:coverage`.
-- The workflow uploads the coverage report as an artifact; `make test-frontend`
-  prints the coverage summary to stdout and leaves `frontend/coverage/` on disk
-  (same output, no upload).
-
-### 3. `update-requirements` — re-pin from current specs (option a), not bump-to-latest (option b)
-
-**Interpretation chosen: (a) re-resolve/re-pin against the existing version
-constraints — the safer default.** This is explicitly **not** "bump every
-dependency to latest compatible version."
-
-- **Backend**: `pip-compile requirements.in -o requirements.txt` re-resolves
-  the transitive closure **within the existing `==` constraints in
-  `requirements.in`** and writes a fresh pinfile. If `requirements.in` says
-  `SQLAlchemy==2.0.52`, the regenerated `requirements.txt` still pins
-  `SQLAlchemy==2.0.52` (plus whatever transitive versions the resolver picks
-  **now** for the unpinned dependencies). This is what the project already
-  documents in `Notes.md` §6.0 as the manual workflow; `make
-  update-requirements` just makes it a target.
-- **Frontend**: `cd frontend && npm install` re-generates
-  `package-lock.json` from `package.json`'s semver ranges — it does **not**
-  bump to latest unless a range already allows it.
-
-**Why (a) and not (b) this close to a demo:** bumping everything to latest
-would be a large risky change right before a presentation — it could pull in a
-breaking semver-major, change behaviour, or introduce a new vulnerability. The
-lockfiles were already slightly stale (drifted since Milestones 2–7 added
-packages incrementally); re-pinning against the existing constraints brings them
-back into sync with what the resolver would pick today from the same constraints,
-without the risk of a mass-bump. If a developer actually wants a mass-bump, that
-is a separate, deliberate action (edit `requirements.in` / `package.json`
-version ranges first, then re-pin).
-
-**Verification performed:**
-- Ran `make update-requirements` — both lockfiles regenerated successfully.
-- Rebuilt the full stack with `docker compose build --no-cache` from the
-  regenerated lockfiles — both images built and the stack came up via `make demo`.
-- Ran `make test-frontend` against the rebuilt stack — all 106 tests in 14
-  test files still pass.
-
-**Gaps / risks carried forward:**
-- `update-requirements` is a **manual target for now** — it does **not** run
-  automatically in CI. A future step could add it to the workflow (e.g. a PR
-  check that fails if `requirements.txt` or `package-lock.json` is out of date
-  with respect to their source specs), but that is not part of this pass.
-- The regenerated `requirements.txt` is version-pinned but **not hash-pinned**
-  (same caveat as before — `pip-compile --generate-hashes` timed out on this
-  network). Re-adding hash-pinning on a healthier network is a trivial follow-up.
-- The regenerated `package-lock.json` was already up to date (npm reported
-  "up to date"), so no actual version changes landed — the target is verified
-  to be safe to run, not verified to have changed anything, which is the correct
-  outcome for a re-pin (not bump) pass.
-
-## Retrofit — Alembic multiple-heads migration error (2026-09-05)
-
-**Root cause:** the migration history branched into **two roots**. `bab69a9`
-(2026-08-12) committed `405c749934b5` (initial schema, plural names, integer
-`id`s), and `9d53b91` committed `60ec8bad202b` on top of it — the canonical
-chain that matches the current `app/models/`. Independently,
-`feature/alembic-migration-seed` (merged as `ba48341`, 2026-08-25) ran a
-`alembic revision --autogenerate` against a **superseded** UUID-based model
-design and committed `ff0a486902ce` — a second initial migration with
-`down_revision=None` (singular table names, `*_id` UUID primary keys). Both
-roots were merged into `develop`, so `alembic heads` reported two heads and
-`alembic upgrade head` refused to pick one. The backend entrypoint retried
-10× and the demo healthcheck timed out. The two generation runs branched off
-the same empty base at different times without the later author syncing
-`develop` first — the classic "two people generated a migration from a
-non-current checkout" race.
-
-**Resolution:** `alembic merge` was **not** sufficient on its own. The two
-branches genuinely conflicted — they both create the same 11 logical entities
-under different table names and primary-key types (`users`/int `id` vs
-`user`/UUID `user_id`); a bare merge would have left **both** schemas in the
-database (22 tables). The fix therefore used the merge-plus-reconcile pattern:
-
-- `13049a14c583` — `alembic merge -m "merge heads" 60ec8bad202b ff0a486902ce`;
-  a pure mergepoint over both heads, no schema change.
-- `3226c58aebdc` — conflict-resolution migration **on top of the merge** that
-  drops the 11 stale singular-UUID tables (`ff0a486902ce`'s schema, children
-  first) and their orphaned enum types. The canonical `405c749934b5` →
-  `60ec8bad202b` schema is left untouched.
-
-The final history is a single line: `405c749934b5 → 60ec8bad202b` and
-`ff0a486902ce` both feed the mergepoint, then `3226c58aebdc` is the sole head.
-`alembic upgrade head` against a fresh `db` volume now produces exactly the
-Milestone-1-DoD schema: 11 tables, 17 foreign keys, and the 11 canonical enum
-types.
-
-**Guardrail added to prevent recurrence:**
-- `backend/docker-entrypoint.sh` — pre-flight `alembic heads` check that exits
-  `1` with a merge instruction if more than one head is reported (runs before
-  the migration retry loop; `alembic heads` needs no DB connection, so it
-  cannot race the database warm-up).
-- `Makefile` — `make check-migrations` target: same check for host-side
-  authoring, fails loudly unless exactly one head exists.
-- **Why this stops the silent retry:** today's failure mode was the entrypoint
-  retrying a would-be-impossible `upgrade head` 10× and the healthcheck timing
-  out. The pre-flight check turns that into an immediate, explicit error —
-  and, for anyone about to commit a new migration, `make check-migrations`
-  catches a branch before it lands. No migration file was deleted and nothing
-  was rewritten by hand; the fix is a normal merge revision plus a
-  reconciliation revision, exactly the Alembic-recommended path.
-
----
-
-## Bug fix — login succeeds but never redirects to the role portal (2026-09-06)
-
-**Symptom (as reported):** the web app accepts valid login credentials — the
-`POST /auth/login` request succeeds, no error is shown — but the user is never
-redirected to the portal appropriate to their role. They sit on the login
-screen (or the generic LoginSuccess page) instead of landing on their
-User/Officer/Admin portal.
-
-**Root cause — failure mode (c), frontend routing/state bug. Confirmed by
-reproduction, not guesswork.** The redirect chain breaks because the React
-auth context is never told that a session exists:
-
-1. `AuthProvider` initialises its `session` state **once** at app mount from
-   `localStorage` (`useState(() => getAuthSession())`). On a fresh visit to
-   `/login` there is no token, so `session = null`.
-2. `Login.tsx` posts to `/auth/login`, gets `200` + `access_token`, stores it
-   in `localStorage` — and **navigates on**. Nothing updates the
-   `AuthContext`, whose `session` remains `null`. The context only ever
-   exposes `logout` (clears to `null`); there was no way to *set* a session
-   after mount.
-3. `LoginSuccess` reads the token back from `localStorage` directly (that is
-   why the DoD claims panel renders correctly and the decoded `Role` looks
-   fine), then auto-redirects to `/{portal}` after 4 s.
-4. The portal route is wrapped in `RequireRole`, which reads
-   `useAuth().session` — still `null` — so it renders
-   `<Navigate to="/login" replace />`. The user is bounced back to the login
-   screen.
-
-So login “succeeds” end-to-end at the HTTP layer (200, token stored, claims
-readable) yet the router can never act on the role: the state the guards read
-was never populated. This is exactly the class of bug where the token/claims
-path and the role checks are both healthy but nothing downstream trusts the
-result.
-
-**Why the original Module 7 / 8 DoD verification did not catch it:** both
-milestones’ Review notes state Chrome was **not installed** in the
-environment, so the DoD was verified via curl flows, compiled-module tests
-against the live API, and dev-server checks — **not a real in-browser login
-click-through** (see “Caveat”, Module 7 §Verification notes, and Module 8
-“Browser click-through was not verified”). The unit-style checks that *did*
-run exercised `getAuthSession`/`RequireRole` in isolation or with a token
-pre-seeded in `localStorage` before the app mounted — which is precisely the
-one scenario that works, because `AuthProvider` picks the session up at mount.
-The failing path only exists when the token appears *after* the provider has
-already mounted (i.e. a normal login), so no automated or manual check that
-skipped a full browser login could see it.
-
-**The fix (frontend only, `fix/frontend-login-redirect`):**
-
-- `frontend/src/lib/auth-context.tsx` — added a `login(token)` method to
-  `AuthContext` that stores the token **and** re-reads it through the
-  existing shape-checked `getAuthSession()` to set the context `session`.
-  Routing `login` through the shape check (valid numeric `exp`/`UserID`,
-  known `Role`) means a tampered or malformed token still cannot establish a
-  session — the Module 7 DoD's anti-tamper property is preserved, not
-  loosened.
-- `frontend/src/routes/auth/Login.tsx` — on successful `POST /auth/login`,
-  call `login(access_token)` (context) instead of the bare `storeToken(...)`
-  helper, so the guard state and storage can never disagree again.
-
-No backend change was needed. #13 and #16 were re-verified by re-running
-their original DoDs, not assumed to hold (see below).
-
-**Why scoped this way:** the failure was isolated to the session-state
-handoff between storage and the router guards. Fixing it in the context (the
-single place guards already read) rather than, say, making `RequireRole`
-re-read `localStorage` on every render keeps one source of truth for the
-session and preserves the existing logout/401 behaviour. No role check was
-weakened — `RequireRole` and `require_role` are untouched.
-
-**DoD re-verification (all three roles, against the running local stack):**
-
-- **#13** — curl login for `User` (`ada@example.com`), `Officer`
-  (`officer@example.com`), `Administrator` (`admin@example.com`) each returns
-  `200` and an `access_token` whose decoded payload contains `UserID` (int)
-  and `Role` (`"User"` / `"Officer"` / `"Administrator"` — exact `Entities.md`
-  spellings). ✅
-- **#16** — `GET /items/lost` (the `require_role`-gated route outside Auth):
-  401 with no token, 200 with any active-role token. `GET /auth/test-protected`
-  (Administrator-only): 401 no token, 403 for `User` and `Officer`, 200 for
-  `Administrator`. ✅
-- **Module 7 issue-2 DoD (browser)** — real headless-Chrome logins as each
-  seeded account now land on the correct portal (`/user` Student portal,
-  `/officer` Lost & Found Officer portal, `/admin` Administration portal).
-  Cross-role URL tampering bounces correctly (a User forced to `/officer` or
-  `/admin` is redirected back to `/user`; an Administrator may open `/officer`
-  per the superset rule). A forged payload (Role rewritten to
-  `Administrator` without a valid signature) is rejected: `getAuthSession`
-  returns `null`, the token is cleared, and the app lands on `/login`.
-  Sessions persist across a full page reload for each role; logout clears the
-  token and returns to `/login`. ✅
-
-**Risks / gaps surfaced (not fixed here):**
-
-- **No automated test guards this exact path.** The frontend unit-test suite
-  lives on an unmerged branch (`test/frontend-unit-tests`) and its
-  `RequireRole`/session tests render guards with a mocked context or a token
-  present at mount — neither exercises a real login-then-redirect against the
-  live API. A regression test that logs in via the real `/auth/login` and
-  asserts the URL reaches the role portal (as done manually here) is the
-  missing guard. Flagged as a follow-up, not silently left.
-- **The browser DoD for Modules 7 and 8 was never executed at the time** —
-  this is the second time a frontend-only bug has been able to ship past
-  those DoDs because verification relied on module-level checks rather than a
-  browser. Running the click-through (or the regression test above) should be
-  part of the Module 8 smoke-test gate.
-- **No change to `Notes.md` claim shape or endpoint behaviour was needed** —
-  the documented token claims (`UserID`, `Role`), endpoints, and
-  `require_role` contract were accurate; only the frontend session wiring was
-  broken. `Notes.md` §13.3 was corrected in place to document the
-  now-authoritative login step (token stored **and** context session
-  established).
-
----
-
-## Testing — Unit test suite (2026-09-06)
-
-### Test-DB strategy: SQLite in-memory
-
-**Chosen:** SQLite in-memory via SQLAlchemy `StaticPool`, with a fresh session
-per test rolled back after each function.
-
-**Why not Postgres/PostGIS:** the CI workflow's unit-test job (`.github/workflows/backend-unit-tests.yml`) does **not** start the `db` or
-`mailpit` Docker services — it only installs `pytest`/`pytest-asyncio`/
-`pytest-cov` from `backend/requirements/test.txt`. A Postgres-backed test
-suite would need a running Postgres instance, which the unit-test job
-explicitly does not provide. SQLite in-memory gives us:
-
-- Zero external dependencies — hermetic, no network, no `db`/`mailpit`
-  services needed.
-- Fast test runs (225 tests in ~90 seconds).
-- A fresh database per test session with tables created from the same
-  `Base.metadata` Alembic reads.
-
-**Trade-off:** SQLite cannot exercise native Postgres enum types (the enum
-*values* are asserted by checking the Python enum classes, which are the
-source of truth for both Postgres and the ORM). Migration compatibility is
-not tested by unit tests — that's covered by `make check-migrations` and the
-demo kit's automatic migration-on-start. The unit tests pin the *behavioral*
-contract (models, enums, FK relationships, API responses), not the migration
-history.
-
-### How StorageBackend and EmailBackend are mocked/faked
-
-**StorageBackend:** `TestLocalDiskStorage` tests in `test_items.py` create a
-`LocalDiskStorage` against a `tempfile.TemporaryDirectory()` — never the real
-`backend/uploads/` volume. The tests prove `save`/`get_url`/`delete` round-trip
-correctly, handle filename collisions with UUID prefixes, and that the public
-`/media/{filename}` route serves files back. The `Attachment` row stores **only
-the URL** (`file_path`), never bytes — asserted by uploading a file via the API
-and checking that the stored `file_path` contains `/media/` but not the file
-content.
-
-**EmailBackend:** `test_notifications.py` mocks `email_backend.send` with
-`unittest.mock.patch.object(email_backend, "send", ...)`. The tests assert:
-
-- `send()` is called with the right `to`/`subject` shape for each trigger
-  (match suggested → both parties; claim submitted → claimant; approved → 2
-  emails; rejected → 1 email with officer notes).
-- A `Notification` row is written **even when the mocked send raises** — the
-  decoupling guarantee from Module 6's DoD. The test makes `send` throw and
-  asserts the row still exists.
-
-This is the payoff for the `StorageBackend`/`EmailBackend` interface discipline
-from Modules 3 and 6 — because business logic is written against the interfaces,
-not concrete providers, we can test the logic by mocking the transport without
-spinning up real disk/SMTP services.
-
-### Coverage-scope note
-
-Our tests live in `backend/tests/` but the CI coverage pass scopes
-`--cov=api --cov=models --cov=schemas`. Those three package names don't match
-our actual layout:
-
-- `api` → our routers/services live in `app.modules.*` (not a top-level `api` package)
-- `models` → our models live in `app.models` (not a top-level `models` package)
-- `schemas` → our schemas live in `app.modules.*/schemas.py` (not a top-level `schemas` package)
-
-**Result:** the CI coverage command as written collects **no data** because
-those modules are never imported under those names. The working coverage command
-is:
-
-```bash
-cd backend
-uv run python -m pytest -v --cov=app.app --cov=app.models --cov=app.modules --cov-report=term-missing
-```
-
-This covers `app.app` (the FastAPI app + routers), `app.models` (all 11 entities
-+ enums, 100% covered), and `app.modules` (all module code including schemas).
-
-**Action needed:** update `.github/workflows/backend-unit-tests.yml` to use the
-correct `--cov` paths, or restructure the app package to match the CI's expected
-layout. This is flagged as a gap — the test suite is complete and passes, but the
-CI coverage reporting is misconfigured.
-
-### Discrepancy found: Notes.md §10.1 partial-match score
-
-Notes.md §10.1 documents the partial-match sample as scoring **78.22**, but the
-actual computed score with those exact sample dicts is **91.79** (verified
-2026-09-06). The similarity formula and weights are correct — the Notes.md value
-appears to have been computed with slightly different sample text. The test
-(`test_matching.py::TestSimilarityPartialMatch`) asserts the actual computed
-value (91.79), not the documented one. The code is authoritative; Notes.md
-should be updated to reflect the actual score.
-
-### Bugs found and fixed
-
-**None.** All modules behaved exactly as documented in Notes.md and Review.md when
-tested. The test suite confirms the existing behavior rather than surfacing bugs.
-
-### Known coverage gaps
-
-- **Dashboard reporting endpoints** (`GET /dashboard/summary`, `GET
-  /dashboard/reports`) are deferred (Module 7 guardrail) — no tests needed yet.
-- **`GET /notifications` and `GET /audit-logs`** do not exist yet — no tests
-  needed yet.
-- **Module 9 cloud adapters** (`SupabaseStorage`, `ResendEmailBackend`) are
-  intentionally excluded — they need real Supabase/Resend credentials and are
-  tested via integration tests, not unit tests.
-- **BackgroundTask execution** — the matching/notification background tasks run
-  in-process and are hard to test deterministically with SQLite (the request
-  session is closed before the task runs). We test the *scheduling* pattern
-  indirectly (item creation returns 201, proving the task was scheduled) and
-  test `similarity.py` directly (the scoring logic the background task executes).
-- **Accept/reject flow with real Match creation** — the matching router's accept/
-  reject endpoints require a `Suggested` Match to exist, which requires the
-  BackgroundTask to have run. With SQLite in-memory, the background task may not
-  execute before we query. These flows are partially covered by the similarity
-  tests and the claims service tests (which test `create_from_match` directly).
-
-### Auth transport assumption
-
-The test suite assumes **Bearer tokens in the Authorization header** (the
-original Module 2 design). The tests verify JWT claims, token expiry, role
-gating, and status gating via the protected routes (`/auth/test-protected`,
-`/items/lost`). If the JWT-cookie retrofit has landed, the cookie-specific
-behavior (HttpOnly, SameSite, `GET /auth/me`, `POST /auth/logout`) would need
-separate tests — but the core auth logic tests (token creation, decoding, role
-checks) remain valid regardless of transport.
+## Retrofit — Frontend Unit Test Suite (2026-08-31)
+
+### Why Vitest + React Testing Library
+
+**Vitest** was chosen because the frontend is already a Vite + React 19 app —
+Vitest runs on the same toolchain as the build, avoiding the configuration
+drift that comes from pulling in Jest separately. **React Testing Library**
+(RTL) is the standard pairing for Vitest with React; its user-centric queries
+(`getByRole`, `getByLabelText`, `getByText`) enforce testing behavior rather
+than implementation details, which is why snapshot tests and CSS-class
+assertions were deliberately avoided.
+
+The test environment is **jsdom** (configured in `vitest.config.ts`), with
+`@testing-library/jest-dom` matchers wired via a setup file. This gives us DOM
+assertions like `toBeInTheDocument()` and `toHaveClass()` without coupling to
+a real browser.
+
+### Why the CI workflow mirrors `backend-unit-tests.yml`
+
+The frontend workflow (`.github/workflows/frontend-unit-tests.yml`) follows the
+same structural pattern as the backend workflow: path-filtered triggers, pinned
+tool versions, `npm ci` for reproducible installs, and a build/typecheck step
+before tests. This is deliberate — consistent CI structure across frontend and
+backend makes it easier for the team to maintain both workflows without
+learning two different patterns.
+
+Key differences from the backend workflow:
+- **Node 22** (pinned via `actions/setup-node`) instead of Python/uv
+- **`npm ci`** instead of `pip install`
+- **`npm run test:coverage`** (Vitest v8 provider) instead of pytest-cov
+- **Lint step uses `oxlint`** (the project's existing linter, not ESLint)
+- **Coverage threshold set to 35%** (actual: 37.27% lines) — aggressive enough
+  to enforce, not so high it becomes a burden before the suite matures
+
+### CI verification status
+
+**Not yet verified in CI.** The workflow file was created and all local checks
+pass (`npm run build`, `npm run lint`, `npm run test:coverage`). However, this
+environment has no GitHub remote access, so the workflow's actual trigger
+behavior (does it run on push/PR to `main`/`develop` scoped to `frontend/**`?)
+has not been confirmed. The primary remaining DoD item is a deliberate
+break-then-fix cycle: push a PR that breaks a test, verify the workflow fails,
+then fix it and verify it passes. This must be done by the human after merging.
+
+### Coverage gaps deliberately left out of scope
+
+| Gap | Why out of scope |
+|-----|------------------|
+| **E2E tests** (Playwright/Cypress) | Unit/component level only per the task spec; E2E is a separate concern requiring browser automation infrastructure |
+| **Visual regression** | Needs screenshot comparison tooling (Chromatic, Percy, etc.) — not in scope for a unit-test retrofit |
+| **Accessibility audits** | axe-core integration is valuable but orthogonal to behavioral test coverage |
+| **Auth pages** (Login, Register) | Form-heavy, lower priority than core logic and design-system components; follow-up work |
+| **Portal wrapper pages** | Thin `useState` wrappers — low test priority |
+| **Dashboard pages** | Data-heavy, requires extensive mock data setup |
+
+### What the test suite actually covers
+
+- **Auth/session utilities**: 28 tests covering `decodeToken`, `isExpired`,
+  `isValidPayload`, `portalForRole`, token storage helpers, and `getAuthSession`
+  (the shape-checked session resolver)
+- **Shared design-system components**: 51 tests across Button, Card,
+  StatusBadge, Modal, Field, EmptyState, Loading, StatCard, and Toast
+- **Portal gating**: 9 tests confirming `RequireRole` renders the correct
+  portal for each role and redirects cross-role access
+- **Core portal flows**: 28 tests covering the ReportItem form, ReviewClaims
+  approve/reject flow, and Admin category management
+
+All tests mock `fetch` at the test boundary — no test requires a live backend.
+
+## Retrofit — Backend Test Suite (2026-09-06)
+
+### Why pytest with a split unit/integration setup
+
+**pytest** is the natural choice — the backend has no JS toolchain, and pytest
+is the de-facto standard for FastAPI + SQLAlchemy projects, with first-class
+fixtures (`monkeypatch`, dependency fixtures) that map directly onto this
+codebase's needs. The suite is deliberately split into two surfaces rather than
+one, so CI has a fast feedback loop:
+
+- **Unit / fast** (`-m "not integration"`, SQLite in-memory via `StaticPool`)
+  — 25 tests in ~7 s, no external services. Auth module + pure-function tests.
+- **Integration** (`@pytest.mark.integration`, real local Postgres) — 33 tests
+  that exercise the full FastAPI + SQLAlchemy stack, including the Module 4
+  matching `BackgroundTask` runner and Module 6 notification triggers, which
+  open their own sessions through `app.db.SessionLocal`.
+
+Splitting means the CI job can fail fast on logic regressions before spending
+~1:30 on the full pass, and developers can run the unit surface anywhere
+without a Postgres container.
+
+### Why real Postgres for integration (not SQLite-only)
+
+The earliest draft plan (`issues/gitlogs/t`) was a single SQLite in-memory
+database for everything. That was abandoned for the integration surface for
+three concrete reasons discovered while writing the fixtures:
+
+1. **Module 4's matching runner opens its own `SessionLocal`** from a
+   `BackgroundTask` — a SQLite `StaticPool` sees the same schema, but
+   reproducing the transaction/commit semantics of Postgres READ COMMITTED
+   (see the `make_category` fixture: request sessions are separate
+   transactions) is where SQLite fidelity gaps show up.
+2. **Native Postgres enums + `Identity()` primary keys** — SQLite would map
+   these differently, and a test could pass on SQLite while the enum columns
+   provably would not behave the same in production.
+3. **It matched how the app is deployed** — the compose `db` container and the
+   CI Postgres service use the same image/credentials, so "green locally against
+   `trace_test`" and "green in CI" are the same claim.
+
+SQLite is retained for the auth/unit surface, where no background sessions and
+no Postgres-specific schema features are involved. The two surfaces share the
+`make_user`/`make_category` role-and-token helpers.
+
+### Why the CI workflow mirrors `frontend-unit-tests.yml`
+
+The backend workflow (`.github/workflows/backend-unit-tests.yml`) follows the
+same structural pattern as the frontend workflow — path-filtered push/PR
+triggers to `main`/`develop`, pinned tool versions, `working-directory`
+scoping, an artifact upload — so both halves of the repo behave the same way in
+CI. The frontend workflow's Review note "mirrors `backend-unit-tests.yml`"
+referred to the reference pattern given in the issue; this retrofit is what
+actually materializes that backend workflow.
+
+Key differences from the frontend workflow (- and the reference backend CI):
+- **Postgres 16 service container** (user `trace`, password
+  `trace_local_password`, DB `trace_test`) stands in for the compose `db`
+  container; `conftest.py` creates `trace_test` if the service's `POSTGRES_DB`
+  leaves it out and otherwise treats it as a no-op.
+- **Two-pass run**: a fast `--no-cov -m "not integration"` pass first, then the
+  full `--cov=app --cov-report=term-missing --cov-report=xml` pass, gated on
+  `if: always()` so the coverage step still runs even if the fast pass fails.
+- **Install uses pip** (`requirements.txt` + `pytest pytest-asyncio pytest-cov`)
+  — the reference pattern drives installs with `uv`; TRACE has no `uv.lock`,
+  and its Dockerfile installs with `pip install -r requirements.txt`, so pip is
+  the honest mirror of the existing build.
+- **No PostGIS/DuckDB steps** — the reference's geo-data services have no
+  counterpart in TRACE.
+- **No Mailpit service** — the notification SMTP-failure tests monkeypatch
+  `email_backend.send` to raise and assert on persisted rows, so no live MTA is
+  required.
+- **No `*_FILE` secrets** — TRACE's `config.py` reads plain env vars (no
+  pydantic-settings `*_FILE` semantics), so dummy secrets are passed directly
+  as env vars.
+
+### CI verification status
+
+**Not yet verified in CI.** The workflow file was created and all local checks
+pass — fast pass (`25 passed, 33 deselected`) and full coverage pass
+(`58 passed`, 89% lines) against a local Postgres `trace_test`. However, this
+environment has no GitHub remote access, so the workflow's actual trigger
+behavior (does it run on push/PR to `main`/`develop` scoped to `backend/**`,
+and does the Postgres service container wire up correctly?) has not been
+confirmed. The primary remaining DoD item is the deliberate break-then-fix
+cycle on GitHub, identical to the frontend retrofit.
+
+### Coverage gaps deliberately left out of scope
+
+| Gap | Why out of scope |
+|-----|------------------|
+| **Category admin REST endpoints** (`categories.py` 34%) | Only reachable by an Administrator category-management flow; the pieces the suite needs (category list for forms, inactive-category 400) are covered. Full CRUD/archive/restore routes are follow-up. |
+| **Uploads/storage endpoints** (`uploads.py` 48%, `storage.py` 71%) | Async multipart uploads and the pluggable storage backend require real-file fixtures (memory/provider-backed) and a bespoke storage test double — a distinct piece of work. |
+| **Dead alternate modules** (`app/database.py`, `app/models/base.py`, 0%) | Not wired into `main.py`; they exist as alternates from Milestones 0–1. Optionally deletable in a follow-up. |
+| **`app/db.py` non-default paths** (67%) | Engine construction under overridden `DATABASE_URL`/environment paths is untested; the default path every test hits is 100% exercised. |
+
+### What the test suite actually covers
+
+- **Auth (17 unit tests)**: bcrypt hashing/verify, JWT `UserID`/`Role`/`sub`
+  claims, `require_role` 401/403 across User/Officer/Administrator, register/
+  login success and failure, duplicate-email 409, short-password 422,
+  case-insensitive email normalization, suspended-user 403.
+- **Items (11 integration tests)**: lost/found CRUD round-trips, active-only
+  category 400, owner-vs-cross-user-vs-officer/admin scoping (404/200),
+  unauthenticated 401, invalid status enum 422, per-status enum values.
+- **Matching (14 tests)**: pure `compute_similarity` cases (obvious match hits
+  the `MATCH_THRESHOLD` of 60.00, date decay, partial/missing fields,
+  non-match) plus the integration lifecycle — background finder creates a
+  `Suggested` match on item POST, user sees only their own matches while
+  officers see all, accept → claim + status flip, reject → `Rejected`, 409 on
+  re-resolve.
+- **Claims (12 integration tests)**: the full accept→claim→verify→collect
+  transition table with `Passed`/`Failed` verification records, `ClaimApproved`/
+  `ClaimRejected`/`ClaimCollected` audit rows, Pending-result 422 rules,
+  double-verify 400, collect-requires-approved 400, and an atomicity test that
+  verifies force-rolled-back approval persists no partial three-way update.
+- **Notifications (4 integration tests)**: all three triggers persist their
+  rows (`Match suggested`, `Claim submitted`, `Claim approved`) even when SMTP
+  is forced to fail, plus the `NotificationType` enum catalog.
+
+All integration tests run against a per-test fresh schema, so ordering can
+never leak state between tests (verified after the first full-suite run exposed
+connection exhaustion: each test's Postgres engine is now `dispose()`d with a
+bounded pool, keeping the run comfortably under `max_connections`).

@@ -30,5 +30,11 @@ backend/uploads/*
 .mypy_cache/
 .ruff_cache/
 
+# Coverage reports
+backend/.coverage
+backend/coverage.xml
+htmlcov/
+frontend/coverage/
+
 # Issues local drafts
 issues/Trace_isses.md
