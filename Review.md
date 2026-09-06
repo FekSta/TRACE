@@ -444,6 +444,111 @@ a silent guess.
 
 ---
 
+## Module 8 follow-ups — Makefile hardening (2026-09-06)
+
+Three follow-ups hardening the existing `make demo` setup from the
+"Seed script + `make demo` target" issue (already closed). None of these
+reopen that issue's scope — they add developer ergonomics and dependency
+hygiene on top of the working demo kit.
+
+### 1. Why `make migrate` is additive to the startup entrypoint, not a replacement
+
+The backend container entrypoint (`backend/docker-entrypoint.sh`) already runs
+`alembic upgrade head` on every container start — that is the **safety net**
+for the case where someone runs `docker compose up` without `make` (or restarts
+a single container). Removing it would break that path.
+
+`make migrate` is a **separate, explicit target** that shells out to
+`docker compose exec -T backend alembic upgrade head` against whatever backend
+container is currently up. It exists for two reasons the entrypoint does not
+cover:
+
+- **Visibility/control for developers**: a developer working against an
+  already-running stack (e.g. after pulling a migration somebody else wrote)
+  can run `make migrate` on demand without restarting the backend container.
+- **CI/ scripting**: an automation step can invoke `make migrate` explicitly
+  and see its exit code, rather than relying on the container's internal
+  retry loop.
+
+Re-running `make migrate` against an already-migrated database is a no-op:
+Alembic's `upgrade head` is idempotent — verified by running it twice
+back-to-back against the `make demo` stack, both runs exited cleanly with no
+duplicate schema changes.
+
+### 2. `make test-frontend` is a thin wrapper around the existing CI suite
+
+`.github/workflows/frontend-unit-tests.yml` already defines and runs the
+frontend unit test suite in CI. The only gap was that there was no equivalent
+one-command way to run that same suite locally. `make test-frontend` closes
+that gap **without duplicating or reinventing the suite**:
+
+- It runs the **exact same command** the workflow runs: `cd frontend && npm ci && npm run test:coverage`.
+- It does **not** add, edit, or extend any test files (`.test.ts`/`.test.tsx`).
+- It does **not** modify the GitHub Actions workflow file.
+- It does **not** add Playwright/Cypress/E2E tests.
+
+**Local/CI parity caveats:**
+- The workflow pins `NODE_VERSION: 22` via `actions/setup-node`. Local runs
+  therefore require Node 22 installed on the host to match CI exactly.
+- The workflow runs `npm audit --audit-level=high` (with
+  `continue-on-error: true`) and `npm run build` (tsc + vite build) **before**
+  the tests; `make test-frontend` runs only `npm ci && npm run test:coverage`.
+  That is intentional — this follow-up is about exposing the existing test
+  suite, not replicating the workflow's full CI matrix (audit + build check +
+test) in one local target. Developers who want the full CI parity locally can
+  run the three steps manually: `cd frontend && npm ci && npm run build && npm run lint && npm run test:coverage`.
+- The workflow uploads the coverage report as an artifact; `make test-frontend`
+  prints the coverage summary to stdout and leaves `frontend/coverage/` on disk
+  (same output, no upload).
+
+### 3. `update-requirements` — re-pin from current specs (option a), not bump-to-latest (option b)
+
+**Interpretation chosen: (a) re-resolve/re-pin against the existing version
+constraints — the safer default.** This is explicitly **not** "bump every
+dependency to latest compatible version."
+
+- **Backend**: `pip-compile requirements.in -o requirements.txt` re-resolves
+  the transitive closure **within the existing `==` constraints in
+  `requirements.in`** and writes a fresh pinfile. If `requirements.in` says
+  `SQLAlchemy==2.0.52`, the regenerated `requirements.txt` still pins
+  `SQLAlchemy==2.0.52` (plus whatever transitive versions the resolver picks
+  **now** for the unpinned dependencies). This is what the project already
+  documents in `Notes.md` §6.0 as the manual workflow; `make
+  update-requirements` just makes it a target.
+- **Frontend**: `cd frontend && npm install` re-generates
+  `package-lock.json` from `package.json`'s semver ranges — it does **not**
+  bump to latest unless a range already allows it.
+
+**Why (a) and not (b) this close to a demo:** bumping everything to latest
+would be a large risky change right before a presentation — it could pull in a
+breaking semver-major, change behaviour, or introduce a new vulnerability. The
+lockfiles were already slightly stale (drifted since Milestones 2–7 added
+packages incrementally); re-pinning against the existing constraints brings them
+back into sync with what the resolver would pick today from the same constraints,
+without the risk of a mass-bump. If a developer actually wants a mass-bump, that
+is a separate, deliberate action (edit `requirements.in` / `package.json`
+version ranges first, then re-pin).
+
+**Verification performed:**
+- Ran `make update-requirements` — both lockfiles regenerated successfully.
+- Rebuilt the full stack with `docker compose build --no-cache` from the
+  regenerated lockfiles — both images built and the stack came up via `make demo`.
+- Ran `make test-frontend` against the rebuilt stack — all 106 tests in 14
+  test files still pass.
+
+**Gaps / risks carried forward:**
+- `update-requirements` is a **manual target for now** — it does **not** run
+  automatically in CI. A future step could add it to the workflow (e.g. a PR
+  check that fails if `requirements.txt` or `package-lock.json` is out of date
+  with respect to their source specs), but that is not part of this pass.
+- The regenerated `requirements.txt` is version-pinned but **not hash-pinned**
+  (same caveat as before — `pip-compile --generate-hashes` timed out on this
+  network). Re-adding hash-pinning on a healthier network is a trivial follow-up.
+- The regenerated `package-lock.json` was already up to date (npm reported
+  "up to date"), so no actual version changes landed — the target is verified
+  to be safe to run, not verified to have changed anything, which is the correct
+  outcome for a re-pin (not bump) pass.
+
 ## Retrofit — Alembic multiple-heads migration error (2026-09-05)
 
 **Root cause:** the migration history branched into **two roots**. `bab69a9`

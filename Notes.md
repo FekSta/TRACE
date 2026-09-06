@@ -338,8 +338,11 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/matches
 
 | Target | What it does |
 |--------|--------------|
-| `make demo` | **Build + start + migrate + seed + wait for `/health`** — the one command |
+| `make demo` | **Build + start + migrate + seed + wait for `/health`** — the one command. Now explicitly runs `make migrate` then `make seed` as visible steps after the backend is healthy (build → up → migrate → seed → wait). |
+| `make migrate` | Run Alembic migrations against the running backend container (`docker compose exec backend alembic upgrade head`). Idempotent — safe to re-run any time against an already-migrated database. **Both this target and the backend entrypoint exist and are not redundant:** the entrypoint (`docker-entrypoint.sh`) is a safety net for non-`make` usage (plain `docker compose up` self-migrates); `make migrate` gives developers and CI explicit control without restarting the backend. |
 | `make seed` | Re-run the idempotent seed against the running stack (safe any time) |
+| `make test-frontend` | Run the existing frontend unit test suite locally — the **same suite** as `.github/workflows/frontend-unit-tests.yml`. Runs `cd frontend && npm ci && npm run test:coverage`. Requires **Node 22** locally (matching CI's `actions/setup-node` with `NODE_VERSION: 22`). To run manually without `make`: `cd frontend && npm ci && npm run test:coverage`. Does **not** add or modify any test files — it is a thin wrapper around the existing Vitest suite. |
+| `make update-requirements` | Regenerate pinned dependency lockfiles from current specs (**re-pin, not bump-to-latest**): backend `requirements.txt` from `requirements.in` via `pip-compile`; frontend `package-lock.json` from `package.json` via `npm install`. After running, always rebuild the stack (`docker compose build` or `make demo`) and re-run `make test-frontend` to confirm nothing broke. Requires `pip-tools` in `backend/.venv` (install with `cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools`). |
 | `make up` / `make down` | Start / stop the stack (data volume preserved) |
 | `make clean` | Stop and **wipe all data** (`docker compose down -v`) — fresh-demo reset |
 | `make logs` / `make ps` | Follow logs / show service status |
