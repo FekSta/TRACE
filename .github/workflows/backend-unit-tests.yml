@@ -1,0 +1,94 @@
+# ===== Workflow: Backend — Unit & Integration Tests =====
+#
+# FastAPI + SQLAlchemy + pytest + local Postgres via Docker. Differences from
+# the reference (see Review.md §Testing/Retrofit):
+#   - TRACE uses pip + requirements.txt (no uv, no pyproject.toml, Dockerfile
+#     installs with pip) — so the workflow uses a plain venv + pip, not `uv`.
+#   - A Postgres 16 service container stands in for the local `db` container;
+#     no Mailpit service exists because the notification suite asserts on DB
+#     rows and forces SMTP failure by monkeypatch (never needs a live MTA).
+#   - TRACE's config reads plain env vars (no pydantic-settings `*_FILE`
+#     semantics), so dummy values are set directly as env vars, not `*_FILE`.
+#
+# Structure kept from the reference: path-filtered triggers, working-directory
+# scoping, a fast `-m "not integration"` pass before the slower full coverage
+# pass, secrets/env passed in, and the coverage step gated on `if: always()`.
+
+name: Backend — Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-unit-tests.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-unit-tests.yml"
+
+env:
+  PYTHON_VERSION: "3.14"
+  # Dummy values so config.py imports cleanly in CI (never real credentials).
+  # TEST_DATABASE_URL points the test suite at the job's Postgres service
+  # container (trace_test DB, owned by the compose-style superuser).
+  JWT_SECRET: "ci-only-change-this-development-secret"
+  EMAIL_BACKEND: "smtp"
+  SMTP_HOST: "localhost"
+  SMTP_PORT: "25"
+  TEST_DATABASE_URL: "postgresql+psycopg://trace:trace_local_password@localhost:5432/trace_test"
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: trace_test
+          POSTGRES_USER: trace
+          POSTGRES_PASSWORD: trace_local_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements.txt
+          .venv/bin/python -m pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run unit tests (exclude integration)
+        run: .venv/bin/python -m pytest --no-cov -v -m "not integration"
+
+      - name: Run all tests with coverage
+        if: always()
+        run: |
+          .venv/bin/python -m pytest -v \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage-report
+          path: backend/coverage.xml
+          retention-days: 7
