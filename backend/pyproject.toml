@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]  # pyflakes, pycodestyle, isort, pyupgrade, bugbear
+ignore = [
+    "B008",  # FastAPI's Depends()/Query() as default args is the idiomatic
+             # pattern, not the accidental mutable-default-arg bug this rule
+             # targets — see Review.md §Linting
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint.per-file-ignores]
+# sys.path manipulation before import is required here, not accidental
+"alembic/env.py" = ["E402"]
