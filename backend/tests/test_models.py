@@ -12,6 +12,7 @@ turn red immediately.
 Authority: Notes.md §4 (entity reference) and Entities.md (the 11 entities).
 """
 
+
 from datetime import date
 from decimal import Decimal
 
