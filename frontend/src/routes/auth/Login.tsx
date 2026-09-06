@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
-import { storeToken, decodeToken } from "../../lib/auth";
+import { decodeToken } from "../../lib/auth";
+import { useAuth } from "../../lib/auth-context";
 
 /**
  * Login — direct translation of demo/auth/login.html, backed by the real
@@ -10,6 +11,7 @@ import { storeToken, decodeToken } from "../../lib/auth";
  */
 export default function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -41,7 +43,10 @@ export default function Login() {
         "/auth/login",
         { email: email.trim(), password },
       );
-      storeToken(data.access_token);
+      // Store the token AND establish the session in AuthContext. Portal
+      // guards (RequireRole) read the context session, so without the second
+      // step a successful login would bounce straight back to /login.
+      login(data.access_token);
       // DoD: prove the Role claim is readable from the stored token.
       const payload = decodeToken(data.access_token);
       console.debug(
