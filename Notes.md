@@ -1408,7 +1408,7 @@ above. Unlike the earlier sections this one documents the app's
 | `frontend/src/components/layout/AppShell.tsx` | Shared sidebar + topbar shell for all three portals |
 | `frontend/src/components/ui/` | Shared design-system primitives (Button, Card, StatusBadge, StatCard, Modal, Field, Toast, …) |
 | `frontend/src/lib/auth.ts` | JWT storage + dependency-free decode (`Role` claim), `getAuthSession`, `portalForRole` |
-| `frontend/src/lib/auth-context.tsx` | Session context + logout |
+| `frontend/src/lib/auth-context.tsx` | Session context — `login(token)` (store + establish session), `logout`, session for guards |
 | `frontend/src/lib/api.ts` | Fetch wrapper — the only place HTTP happens |
 | `frontend/src/lib/types.ts` | TypeScript mirrors of the backend response schemas |
 | `frontend/src/hooks/useFetch.ts`, `useAuthedFetch.ts` | Fetching with loading/error/reload; logout on 401 |
@@ -1441,16 +1441,22 @@ amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
 
 ### 13.3 Auth flow
 
-- **Login**: `POST /auth/login` → token stored in `localStorage` under
-  `trace.access_token`; the decoded `Role` claim is read back immediately
-  (LoginSuccess renders it — the issue-1 DoD artifact).
+- **Login**: `POST /auth/login` → on success the token is stored in
+  `localStorage` under `trace.access_token` **and** the session is established
+  in the auth context via `AuthContext.login(token)` (single call, added in
+  the 2026-09-06 redirect bug fix — the context re-reads the token through
+  the shape-checked `getAuthSession()`, so a tampered token can never create
+  a session). The decoded `Role` claim is read back immediately (LoginSuccess
+  renders it — the issue-1 DoD artifact).
 - **Decode**: dependency-free `decodeToken`; `getAuthSession` enforces a
   strict payload shape (valid numeric `exp` + `UserID`, known `Role`), so a
   tampered payload cannot silently render privileged views.
-- **Routing**: `RequireRole` reads the role from the decoded token **only**
-  — no session → `/login`; wrong role for the URL → redirected to that
-  role's own portal. `Administrator` is a superset of `Officer` (may open
-  `/officer`, matching `is_staff`).
+- **Routing**: `RequireRole` reads the role from the decoded token in the
+  **auth-context session only** — no session → `/login`; wrong role for the
+  URL → redirected to that role's own portal. `Administrator` is a superset
+  of `Officer` (may open `/officer`, matching `is_staff`). Because guards
+  read context state (not storage directly), the context session MUST be set
+  at login — that is the redirect fix of 2026-09-06 (see `Review.md`).
 - **Logout / expiry**: logout clears the token; any API 401/403 also logs
   the user out. Expired tokens are detected client-side and cleared (no
   refresh tokens in this milestone). Storage-choice trade-off documented in
