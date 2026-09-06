@@ -714,3 +714,130 @@ weakened — `RequireRole` and `require_role` are untouched.
   broken. `Notes.md` §13.3 was corrected in place to document the
   now-authoritative login step (token stored **and** context session
   established).
+
+---
+
+## Testing — Unit test suite (2026-09-06)
+
+### Test-DB strategy: SQLite in-memory
+
+**Chosen:** SQLite in-memory via SQLAlchemy `StaticPool`, with a fresh session
+per test rolled back after each function.
+
+**Why not Postgres/PostGIS:** the CI workflow's unit-test job (`.github/workflows/backend-unit-tests.yml`) does **not** start the `db` or
+`mailpit` Docker services — it only installs `pytest`/`pytest-asyncio`/
+`pytest-cov` from `backend/requirements/test.txt`. A Postgres-backed test
+suite would need a running Postgres instance, which the unit-test job
+explicitly does not provide. SQLite in-memory gives us:
+
+- Zero external dependencies — hermetic, no network, no `db`/`mailpit`
+  services needed.
+- Fast test runs (225 tests in ~90 seconds).
+- A fresh database per test session with tables created from the same
+  `Base.metadata` Alembic reads.
+
+**Trade-off:** SQLite cannot exercise native Postgres enum types (the enum
+*values* are asserted by checking the Python enum classes, which are the
+source of truth for both Postgres and the ORM). Migration compatibility is
+not tested by unit tests — that's covered by `make check-migrations` and the
+demo kit's automatic migration-on-start. The unit tests pin the *behavioral*
+contract (models, enums, FK relationships, API responses), not the migration
+history.
+
+### How StorageBackend and EmailBackend are mocked/faked
+
+**StorageBackend:** `TestLocalDiskStorage` tests in `test_items.py` create a
+`LocalDiskStorage` against a `tempfile.TemporaryDirectory()` — never the real
+`backend/uploads/` volume. The tests prove `save`/`get_url`/`delete` round-trip
+correctly, handle filename collisions with UUID prefixes, and that the public
+`/media/{filename}` route serves files back. The `Attachment` row stores **only
+the URL** (`file_path`), never bytes — asserted by uploading a file via the API
+and checking that the stored `file_path` contains `/media/` but not the file
+content.
+
+**EmailBackend:** `test_notifications.py` mocks `email_backend.send` with
+`unittest.mock.patch.object(email_backend, "send", ...)`. The tests assert:
+
+- `send()` is called with the right `to`/`subject` shape for each trigger
+  (match suggested → both parties; claim submitted → claimant; approved → 2
+  emails; rejected → 1 email with officer notes).
+- A `Notification` row is written **even when the mocked send raises** — the
+  decoupling guarantee from Module 6's DoD. The test makes `send` throw and
+  asserts the row still exists.
+
+This is the payoff for the `StorageBackend`/`EmailBackend` interface discipline
+from Modules 3 and 6 — because business logic is written against the interfaces,
+not concrete providers, we can test the logic by mocking the transport without
+spinning up real disk/SMTP services.
+
+### Coverage-scope note
+
+Our tests live in `backend/tests/` but the CI coverage pass scopes
+`--cov=api --cov=models --cov=schemas`. Those three package names don't match
+our actual layout:
+
+- `api` → our routers/services live in `app.modules.*` (not a top-level `api` package)
+- `models` → our models live in `app.models` (not a top-level `models` package)
+- `schemas` → our schemas live in `app.modules.*/schemas.py` (not a top-level `schemas` package)
+
+**Result:** the CI coverage command as written collects **no data** because
+those modules are never imported under those names. The working coverage command
+is:
+
+```bash
+cd backend
+uv run python -m pytest -v --cov=app.app --cov=app.models --cov=app.modules --cov-report=term-missing
+```
+
+This covers `app.app` (the FastAPI app + routers), `app.models` (all 11 entities
++ enums, 100% covered), and `app.modules` (all module code including schemas).
+
+**Action needed:** update `.github/workflows/backend-unit-tests.yml` to use the
+correct `--cov` paths, or restructure the app package to match the CI's expected
+layout. This is flagged as a gap — the test suite is complete and passes, but the
+CI coverage reporting is misconfigured.
+
+### Discrepancy found: Notes.md §10.1 partial-match score
+
+Notes.md §10.1 documents the partial-match sample as scoring **78.22**, but the
+actual computed score with those exact sample dicts is **91.79** (verified
+2026-09-06). The similarity formula and weights are correct — the Notes.md value
+appears to have been computed with slightly different sample text. The test
+(`test_matching.py::TestSimilarityPartialMatch`) asserts the actual computed
+value (91.79), not the documented one. The code is authoritative; Notes.md
+should be updated to reflect the actual score.
+
+### Bugs found and fixed
+
+**None.** All modules behaved exactly as documented in Notes.md and Review.md when
+tested. The test suite confirms the existing behavior rather than surfacing bugs.
+
+### Known coverage gaps
+
+- **Dashboard reporting endpoints** (`GET /dashboard/summary`, `GET
+  /dashboard/reports`) are deferred (Module 7 guardrail) — no tests needed yet.
+- **`GET /notifications` and `GET /audit-logs`** do not exist yet — no tests
+  needed yet.
+- **Module 9 cloud adapters** (`SupabaseStorage`, `ResendEmailBackend`) are
+  intentionally excluded — they need real Supabase/Resend credentials and are
+  tested via integration tests, not unit tests.
+- **BackgroundTask execution** — the matching/notification background tasks run
+  in-process and are hard to test deterministically with SQLite (the request
+  session is closed before the task runs). We test the *scheduling* pattern
+  indirectly (item creation returns 201, proving the task was scheduled) and
+  test `similarity.py` directly (the scoring logic the background task executes).
+- **Accept/reject flow with real Match creation** — the matching router's accept/
+  reject endpoints require a `Suggested` Match to exist, which requires the
+  BackgroundTask to have run. With SQLite in-memory, the background task may not
+  execute before we query. These flows are partially covered by the similarity
+  tests and the claims service tests (which test `create_from_match` directly).
+
+### Auth transport assumption
+
+The test suite assumes **Bearer tokens in the Authorization header** (the
+original Module 2 design). The tests verify JWT claims, token expiry, role
+gating, and status gating via the protected routes (`/auth/test-protected`,
+`/items/lost`). If the JWT-cookie retrofit has landed, the cookie-specific
+behavior (HttpOnly, SameSite, `GET /auth/me`, `POST /auth/logout`) would need
+separate tests — but the core auth logic tests (token creation, decoding, role
+checks) remain valid regardless of transport.

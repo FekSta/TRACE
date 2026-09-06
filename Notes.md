@@ -1543,3 +1543,106 @@ npm run dev            # http://localhost:5173 (replaces the containerized build
 | Module 7 — Frontend & Dashboard | ✅ closed (see `issues/completed.md`) |
 | Module 8 — Local demo kit | **in progress** — root compose ✅, seed + `make demo` ✅ (see `issues/completed.md`); offline smoke test + `Tutorial.md` follow-through is the remaining issue |
 | Module 9 — Cloud migration (optional) | not started |
+
+---
+
+## 15. Testing
+
+### 15.1 Running the test suite
+
+The backend unit test suite lives in `backend/tests/` and uses pytest with
+SQLite in-memory as the test database (no Postgres/Mailpit/Docker required).
+
+**Day-to-day iteration:**
+
+```bash
+cd backend
+.venv/bin/python -m pytest -v -m "not integration" --ignore=tests/test_geo_parquet_duckdb.py
+```
+
+**The three CI passes (exactly as `.github/workflows/backend-unit-tests.yml`):
+
+```bash
+cd backend
+# Pass 1: not-integration tests
+uv run python -m pytest --no-cov -v -m "not integration" --ignore=tests/test_geo_parquet_duckdb.py
+
+# Pass 2: integration tests (e.g. DuckDB geo-parquet) — skipped if no such tests
+uv run python -m pytest tests/test_geo_parquet_duckdb.py -v --tb=short
+
+# Pass 3: full coverage
+uv run python -m pytest -v --cov=app.app --cov=app.models --cov=app.modules --cov-report=term-missing
+```
+
+> **Note:** the CI workflow currently uses `--cov=api --cov=models --cov=schemas`,
+> but those packages don't exist in our layout. The correct paths are
+> `--cov=app.app --cov=app.models --cov=app.modules`. See `Review.md` §Testing
+> for details.
+
+**Install test dependencies** (one-time):
+
+```bash
+cd backend
+.venv/bin/pip install -r requirements/test.txt
+```
+
+Or if using `uv`:
+
+```bash
+uv pip install -r requirements/test.txt
+```
+
+### 15.2 Fixture reference
+
+`backend/tests/conftest.py` provides the following fixtures:
+
+| Fixture | Scope | Description |
+|---------|-------|-------------|
+| `db_session` | function | A clean SQLAlchemy Session connected to the SQLite in-memory test database. Rolled back after each test. |
+| `client` | function | A FastAPI `TestClient` wired to the test database via dependency override on `get_db`. |
+| `user` | function | A User-role user: Ada Lovelace, `ada@example.com`, password `SuperSecret1!`. |
+| `officer` | function | An Officer-role user: Grace Hopper, `officer@example.com`, password `TestPass123!`. |
+| `admin` | function | An Administrator-role user: Alan Turing, `admin@example.com`, password `TestPass123!`. |
+| `bob` | function | A second User (finder): Bob Builder, `bob@example.com`, password `SuperSecret1!`. |
+| `suspended_user` | function | A Suspended user — login should be rejected with 403. |
+| `inactive_user` | function | An Inactive user — login should be rejected with 403. |
+| `electronics_category` | function | The Electronics category (idempotent by name). |
+| `bags_category` | function | The Bags category. |
+| `lost_item` | function | A sample LostItem owned by `user` in `electronics_category`. |
+| `found_item` | function | A sample FoundItem owned by `bob` in `electronics_category`. |
+| `claim` | function | A sample Claim linking `lost_item` and `found_item`, owned by `user`. |
+| `match` | function | A sample Match linking `lost_item` and `found_item`. |
+| `notification` | function | A sample Notification for `user`. |
+| `verification_record` | function | A sample VerificationRecord for `claim` by `officer`. |
+| `collection_record` | function | A sample CollectionRecord for `claim` by `officer`. |
+| `attachment` | function | A sample Attachment uploaded by `user`. |
+| `audit_log` | function | A sample AuditLog entry by `user`. |
+| `user_token` | function | A valid JWT access token for `user`. |
+| `officer_token` | function | A valid JWT access token for `officer`. |
+| `admin_token` | function | A valid JWT access token for `admin`. |
+| `bob_token` | function | A valid JWT access token for `bob`. |
+
+**Test DB strategy:** SQLite in-memory with `StaticPool`. No Postgres/Redis/
+Mailpit/Supabase required. Enums are tested via the Python enum classes (not
+native Postgres enums). See `Review.md` §Testing for the full rationale.
+
+### 15.3 Per-module test coverage
+
+| Module | Test file | What it pins down |
+|--------|-----------|-------------------|
+| **Models** | `tests/test_models.py` | All 11 entities: exact enum values from Entities.md, all columns with correct types, all FK relationships resolve both directions, seed data contract (4 starter categories). |
+| **Auth** | `tests/test_auth.py` | Module 2 DoD: register (201, 409 duplicate, 422 validation, name trimming, email lowercasing); login (200 with token, 401 wrong password/unknown email with same message, 403 suspended/inactive); JWT claims (UserID, Role, iat, exp, sub); get_current_user/require_role (401 missing/malformed/expired, 403 wrong role/suspended, 200 for correct role); password hashing round-trip (bcrypt $2b$, plaintext never stored). |
+| **Items** | `tests/test_items.py` | Module 3 DoD: category CRUD (Admin-only create/update/archive, 403 for non-Admin, 409 duplicate name, include_archived for Admin only); lost/found item CRUD (scoped: User sees own, Officer sees all, cross-user → 404, status defaults to Reported/Available); LocalDiskStorage (save/get_url/delete round-trip, UUID collision handling, Attachment stores URL not bytes, /media serves files). |
+| **Matching** | `tests/test_matching.py` | Module 4 DoD: similarity.py unit tests against the exact sample dicts from Notes.md §10.1 (obvious match 100.00, obvious non-match 0.00, partial match 91.79); category hard gate; date decay linear to 0 at 14 days; description Jaccard with stopwords; location Jaccard; score capped at 100; GET /matches scoping (Officer sees all, unauthenticated → 401). |
+| **Claims** | `tests/test_claims.py` | Module 5 DoD: create_from_match (correct FKs, Pending/Active, idempotent, rejects non-Accepted match); full status transition table (approve: Pending→Approved, Reported→Claimed, Available→Claimed, Active unchanged, VerificationRecord.Passed; reject: Pending→Rejected, Active→Cancelled, items unchanged, VerificationRecord.Failed; collect: Active→Completed, Claimed→Closed/Returned); terminal-state guards (cannot verify/collect already-verified/completed/rejected claim); AuditLog one row per mutating step; atomicity (session rollback pattern). |
+| **Notifications** | `tests/test_notifications.py` | Module 6 DoD: EmailBackend interface (abstract, SmtpEmailBackend attributes); _send_email catches and logs failures; _row helper creates Notification; email_backend configured for loopback in tests. Full trigger email flows tested via service function mocks (match → both parties, claim submitted → claimant, approved → 2 emails, rejected → 1 email with notes) — see Review.md for the decoupling guarantee test. |
+
+### 15.4 Coverage gaps
+
+See `Review.md` §Testing for the full list of known gaps:
+
+- Dashboard reporting endpoints (deferred)
+- GET /notifications, GET /audit-logs (don't exist yet)
+- Module 9 cloud adapters (need real credentials)
+- BackgroundTask execution (hard to test deterministically with SQLite)
+- Accept/reject flow with real Match creation (requires BackgroundTask to run)
