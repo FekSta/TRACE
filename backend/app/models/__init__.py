@@ -18,15 +18,15 @@ from app.models.user import User
 from app.models.verification_record import VerificationRecord
 
 __all__ = [
-    "User",
-    "LostItem",
-    "FoundItem",
-    "Claim",
-    "Category",
-    "Match",
-    "Notification",
-    "VerificationRecord",
-    "CollectionRecord",
     "Attachment",
     "AuditLog",
+    "Category",
+    "Claim",
+    "CollectionRecord",
+    "FoundItem",
+    "LostItem",
+    "Match",
+    "Notification",
+    "User",
+    "VerificationRecord",
 ]

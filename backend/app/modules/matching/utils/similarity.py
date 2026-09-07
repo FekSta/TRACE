@@ -27,16 +27,16 @@ it never penalises the other components.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Mapping
 
 # --- Weights (sum to 100) ---------------------------------------------------
-_CATEGORY_W = Decimal("40")
-_LOCATION_W = Decimal("15")
-_DATE_W = Decimal("15")
-_DESCRIPTION_W = Decimal("30")
+_CATEGORY_W = Decimal(40)
+_LOCATION_W = Decimal(15)
+_DATE_W = Decimal(15)
+_DESCRIPTION_W = Decimal(30)
 
 # Date proximity window: score decays linearly to 0 at this many days apart.
 _DATE_WINDOW_DAYS = 14

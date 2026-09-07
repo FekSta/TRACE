@@ -11,6 +11,17 @@
 #   3. uvicorn                  — the API itself.
 set -e
 
+# Pre-flight: fail loudly on a branched migration history instead of silently
+# retrying. `alembic heads` reads only the version scripts (no DB connection),
+# so this cannot race the database warm-up below.
+echo "[entrypoint] pre-flight: checking alembic migration heads…"
+HEADS_COUNT=$(alembic heads 2>/dev/null | grep -c '(head)' || true)
+if [ "${HEADS_COUNT}" -gt 1 ]; then
+  echo "[entrypoint] FATAL: alembic reports ${HEADS_COUNT} migration heads — the migration history has branched." >&2
+  echo "[entrypoint] Fix with 'alembic merge -m \"merge heads\" <head1> <head2>' and re-commit (see Notes.md §6)." >&2
+  exit 1
+fi
+
 echo "[entrypoint] waiting for the database and applying migrations…"
 n=0
 until alembic upgrade head; do

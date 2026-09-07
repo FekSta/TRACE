@@ -10,9 +10,6 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.app.models.base import Base
-
-
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://trace:trace_local_password@localhost:5432/trace",
