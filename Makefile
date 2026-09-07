@@ -5,9 +5,17 @@
 # waits on its healthcheck), runs the Alembic migrations and the idempotent
 # demo seed automatically inside the backend container, and waits until the
 # API answers /health. See Tutorial.md for URLs and logins.
+#
+# Backend dependencies are layered under backend/requirements/ (pip-tools):
+#   base.in  -> base.txt   runtime deps the app actually needs in production
+#   local.in -> local.txt  base.txt + local dev tooling (alembic CLI, ruff,
+#                           pip-tools, etc.) — installed into backend/.venv
+#   test.in  -> test.txt   base.txt + test-only deps (pytest, pytest-asyncio,
+#                           pytest-cov) — installed on top of .venv for `make test-backend`
+# The backend Docker image itself should only ever install requirements/base.txt.
 
 .PHONY: demo seed up down clean logs ps \
-	check-migrations migrate-backend \
+	venv check-migrations migrate-backend \
 	update-requirements-backend update-requirements-frontend update-requirements \
 	test-frontend test-backend test \
 	lint-backend lint-backend-fix
@@ -57,6 +65,14 @@ logs: ## Follow logs from all services
 ps: ## Show service status
 	docker compose ps
 
+venv: ## Create backend/.venv and install local dev dependencies (requirements/local.txt)
+	cd backend && python3 -m venv .venv
+	cd backend && .venv/bin/pip install --upgrade pip
+	cd backend && .venv/bin/pip install -r requirements/local.txt
+	@echo ""
+	@echo "backend/.venv ready (requirements/local.txt installed)."
+	@echo "Run 'make test-backend' to additionally install requirements/test.txt."
+
 # make migrate: runs alembic upgrade head inside the backend container.
 # This target is additive to the backend entrypoint's startup migration
 # (docker-entrypoint.sh), not a replacement for it:
@@ -66,7 +82,7 @@ ps: ## Show service status
 # Both coexist precisely because each covers a case the other doesn't.
 #
 check-migrations: ## Fail loudly unless alembic migration history has exactly one head
-	@cd backend && test -x .venv/bin/alembic || { echo "ERROR: backend/.venv is missing — run 'make venv' or build the backend image first"; exit 1; }
+	@cd backend && test -x .venv/bin/alembic || { echo "ERROR: backend/.venv is missing or lacks alembic — run 'make venv' first"; exit 1; }
 	@HEADS="$$(cd backend && .venv/bin/alembic heads 2>/dev/null | grep -c '(head)' || true)"; \
 	  if [ "$${HEADS}" -ne 1 ]; then \
 	    echo "ERROR: expected exactly 1 alembic head, found $${HEADS}."; \
@@ -79,15 +95,13 @@ check-migrations: ## Fail loudly unless alembic migration history has exactly on
 migrate-backend: ## Run Alembic migrations against the running backend container (idempotent — safe to re-run)
 	docker compose exec -T backend alembic upgrade head
 
-test-backend: ## Install hash-pinned backend dependencies and run backend tests
-	cd backend && .venv/bin/pip install --require-hashes -r requirements/base.txt -r requirements/dev.txt
-	cd backend && .venv/bin/python -m pytest
-
-update-requirements-backend: ## Regenerate hash-pinned backend requirements from requirements/base.in
-	@echo "=== Backend: regenerating requirements/base.txt from requirements/base.in ==="
-	cd backend && test -x .venv/bin/pip-compile || { echo "ERROR: pip-tools not found in backend/.venv — run 'cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools' first"; exit 1; }
-	cd backend && .venv/bin/pip-compile --generate-hashes --strip-extras --output-file=requirements/base.txt requirements/base.in
-	@echo "Backend requirements/base.txt regenerated."
+update-requirements-backend: ## Regenerate pinned backend requirements/*.txt from requirements/*.in (re-pin, not bump-to-latest)
+	@echo "=== Backend: regenerating requirements/base.txt, local.txt, test.txt ==="
+	@cd backend && test -x .venv/bin/pip-compile || { echo "ERROR: pip-tools not found in backend/.venv — run 'make venv' first, or 'cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools'"; exit 1; }
+	cd backend && .venv/bin/pip-compile requirements/base.in  -o requirements/base.txt
+	cd backend && .venv/bin/pip-compile requirements/local.in -o requirements/local.txt
+	cd backend && .venv/bin/pip-compile requirements/test.in  -o requirements/test.txt
+	@echo "Backend requirements/*.txt regenerated."
 	@echo ""
 	@echo "Done. Rebuild the backend (docker compose build backend) and re-test before committing."
 
@@ -104,8 +118,8 @@ test-frontend: ## Run the existing frontend unit test suite locally (same suite 
 	cd frontend && npm ci && npm run test:coverage
 
 test-backend: ## Run the backend unit + coverage test suite locally (same suite as .github/workflows/backend-unit-tests.yml)
-	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt' first"; exit 1; }
-	cd backend && .venv/bin/python -m pip install --quiet pytest pytest-asyncio pytest-cov
+	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'make venv' first"; exit 1; }
+	cd backend && .venv/bin/pip install --quiet -r requirements/test.txt
 	@echo "Backend tests need a reachable Postgres test DB (trace_test) on localhost:5432."
 	@echo "If one isn't running: docker compose up -d db  (then create/point TEST_DATABASE_URL at a trace_test DB)"
 	cd backend && \
@@ -126,11 +140,11 @@ test-backend: ## Run the backend unit + coverage test suite locally (same suite 
 test: test-backend test-frontend ## Run both backend and frontend test suites locally
 
 lint-backend: ## Lint (and format-check) the backend with ruff
-	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt' first"; exit 1; }
-	cd backend && .venv/bin/pip install ruff
+	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'make venv' first"; exit 1; }
 	cd backend && .venv/bin/ruff check . --statistics
 	cd backend && .venv/bin/ruff format --check .
 
 lint-backend-fix: ## Auto-fix lint + formatting issues in the backend
+	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'make venv' first"; exit 1; }
 	cd backend && .venv/bin/ruff check . --fix
 	cd backend && .venv/bin/ruff format .

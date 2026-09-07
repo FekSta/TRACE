@@ -31,4 +31,4 @@ backend/uploads/*
 .ruff_cache/
 
 # Issues local drafts
-issues/Trace_isses.md
+issues/
