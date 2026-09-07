@@ -299,6 +299,25 @@ Test tooling was split into `backend/requirements/dev.in` and `dev.txt`, with
 `pytest` as the only dev-only package because the backend test target needs it.
 Runtime installs remain limited to `base.txt`.
 
+### Retrofit verification
+
+The freshly recreated `backend/.venv` installed `base.txt` and `dev.txt` with
+`--require-hashes`, then ran all six test files. All 142 tests passed: Auth 46,
+Claims 30, Items 42, Matching 19, and Notifications 5. `conftest.py` and every
+test module imported cleanly; no tests were skipped and no dependency gap was
+found. The fixture's `fastapi.testclient.TestClient` import is backed by the
+explicit hash-pinned `httpx==0.28.1` entry in `base.txt`; its SQLite test DB is
+backed by the hash-pinned SQLAlchemy runtime dependency, with no external DB
+driver needed for unit tests.
+
+The installed FastAPI/Starlette stack emitted a deprecation warning mentioning
+`httpx2`, but the suite did not require it and `httpx2` appears in none of the
+requirements files. It was not added. The local verification command used
+`tests/ -v`; the current CI workflow installs with `--require-hashes` but runs
+plain `python -m pytest` from `backend`, so it does not currently include the
+requested `-m "not integration"` first pass or a separate full `--cov=app`
+pass. This is a workflow parity gap, not a packaging or test-code failure.
+
 ## Module 7 — Frontend & Dashboard (decided 2026-08-13)
 
 ### Design-source decisions
