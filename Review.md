@@ -273,6 +273,32 @@ a silent guess.
 
 ---
 
+## Dependency management retrofit (2026-09-07)
+
+The backend dependency lock was moved from the hand-edited
+`backend/requirements.txt` to `backend/requirements/base.in` →
+`backend/requirements/base.txt`, compiled with hashes. The change addresses
+CI/local drift that allowed a stale environment to hide the missing explicit
+`httpx` dependency required by FastAPI/Starlette `TestClient`. Investigation
+also surfaced an `httpx2` red flag; it is not a real dependency and is not
+present in any source or compiled requirements file. Hash enforcement makes a
+tampered or typosquatted artifact fail installation rather than silently pass.
+
+The fresh unpinned resolve moved these packages from the legacy lock: Alembic
+1.19.1 → 1.19.2, AnyIO 4.14.2 → 4.15.1, Click 8.4.2 → 8.5.0, idna 3.18 →
+3.19, psycopg-binary 3.3.4 → 3.3.5, Pydantic 2.13.4 → 2.13.5, Pydantic Core
+2.46.4 → 2.46.5, python-dotenv 1.2.2 → 1.2.3, Uvicorn 0.52.1 → 0.52.4,
+and websockets 17.0.1 → 17.1. `certifi`, `httpcore`, `httpx`, and the
+unqualified `psycopg` distribution are newly visible because they are required
+by the explicit httpx and psycopg extras resolution. These changes are expected
+consequences of a fresh resolve, not unexplained direct dependencies. The
+remaining packages are genuine runtime or transitive dependencies of the
+existing FastAPI, Uvicorn, database, auth, and upload stack.
+
+Test tooling was split into `backend/requirements/dev.in` and `dev.txt`, with
+`pytest` as the only dev-only package because the backend test target needs it.
+Runtime installs remain limited to `base.txt`.
+
 ## Module 7 — Frontend & Dashboard (decided 2026-08-13)
 
 ### Design-source decisions
@@ -398,16 +424,11 @@ a silent guess.
   (backend pip install + frontend `npm ci`/`vite build`); subsequent runs are
   seconds. The offline smoke test (next Module 8 issue) should keep this in
   mind — the build needs the package registries the first time.
-- **Python dependency versions: RESOLVED (2026-08-13).** `requirements.txt` is
-  now a pip-compiled **lockfile** (`backend/requirements.in` is the
-  human-readable spec) with all 31 packages pinned `==` to the exact set
-  installed in the verified demo image — proven byte-for-byte: installing the
-  lock in a scratch venv and a rebuilt container both `pip freeze` IDENTICALLY
-  to the original image. The base image is pinned too (`python:3.14.6-slim`).
-  **Caveat**: hash-pinning (`pip-compile --generate-hashes`) was attempted but
-  this environment could not complete the hash-download step (repeated 10-min
-  timeouts), so the lock is version-pinned only, not hash-verified. Re-adding
-  `--generate-hashes` on a healthier network is a trivial follow-up.
+- **Python dependency versions: RESOLVED (2026-09-07).** `base.txt` and
+  `dev.txt` are pip-compiled locks with hashes. A freshly recreated venv
+  installed them successfully with `--require-hashes`, and the focused backend
+  dependency test passed. The legacy root `requirements.txt` remains only for
+  the old-vs-new comparison; consumers use the new locks.
 - **Floating base-image tags**: `postgres:16-alpine`, `node:22-alpine`,
   `nginx:1.27-alpine` move within their major versions. Only mailpit is pinned.
   If reproducibility becomes critical, pin SHAs.
@@ -507,13 +528,9 @@ test) in one local target. Developers who want the full CI parity locally can
 constraints — the safer default.** This is explicitly **not** "bump every
 dependency to latest compatible version."
 
-- **Backend**: `pip-compile requirements.in -o requirements.txt` re-resolves
-  the transitive closure **within the existing `==` constraints in
-  `requirements.in`** and writes a fresh pinfile. If `requirements.in` says
-  `SQLAlchemy==2.0.52`, the regenerated `requirements.txt` still pins
-  `SQLAlchemy==2.0.52` (plus whatever transitive versions the resolver picks
-  **now** for the unpinned dependencies). This is what the project already
-  documents in `Notes.md` §6.0 as the manual workflow; `make
+- **Backend**: `pip-compile --generate-hashes --strip-extras` re-resolves
+  the transitive closure from `requirements/base.in` and writes `base.txt`.
+  This is what the project documents in `Notes.md` §6.0 as the manual workflow; `make
   update-requirements` just makes it a target.
 - **Frontend**: `cd frontend && npm install` re-generates
   `package-lock.json` from `package.json`'s semver ranges — it does **not**
@@ -521,8 +538,8 @@ dependency to latest compatible version."
 
 **Why (a) and not (b) this close to a demo:** bumping everything to latest
 would be a large risky change right before a presentation — it could pull in a
-breaking semver-major, change behaviour, or introduce a new vulnerability. The
-lockfiles were already slightly stale (drifted since Milestones 2–7 added
+  breaking semver-major, change behaviour, or introduce a new vulnerability. The
+  lockfiles were already slightly stale (drifted since Milestones 2–7 added
 packages incrementally); re-pinning against the existing constraints brings them
 back into sync with what the resolver would pick today from the same constraints,
 without the risk of a mass-bump. If a developer actually wants a mass-bump, that
@@ -539,11 +556,10 @@ version ranges first, then re-pin).
 **Gaps / risks carried forward:**
 - `update-requirements` is a **manual target for now** — it does **not** run
   automatically in CI. A future step could add it to the workflow (e.g. a PR
-  check that fails if `requirements.txt` or `package-lock.json` is out of date
+  check that fails if `base.txt` or `package-lock.json` is out of date
   with respect to their source specs), but that is not part of this pass.
-- The regenerated `requirements.txt` is version-pinned but **not hash-pinned**
-  (same caveat as before — `pip-compile --generate-hashes` timed out on this
-  network). Re-adding hash-pinning on a healthier network is a trivial follow-up.
+- The legacy root `requirements.txt` is retained only for the old-vs-new audit;
+  new installs must use `base.txt` or `dev.txt` with `--require-hashes`.
 - The regenerated `package-lock.json` was already up to date (npm reported
   "up to date"), so no actual version changes landed — the target is verified
   to be safe to run, not verified to have changed anything, which is the correct

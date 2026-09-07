@@ -342,7 +342,7 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/matches
 | `make migrate` | Run Alembic migrations against the running backend container (`docker compose exec backend alembic upgrade head`). Idempotent — safe to re-run any time against an already-migrated database. **Both this target and the backend entrypoint exist and are not redundant:** the entrypoint (`docker-entrypoint.sh`) is a safety net for non-`make` usage (plain `docker compose up` self-migrates); `make migrate` gives developers and CI explicit control without restarting the backend. |
 | `make seed` | Re-run the idempotent seed against the running stack (safe any time) |
 | `make test-frontend` | Run the existing frontend unit test suite locally — the **same suite** as `.github/workflows/frontend-unit-tests.yml`. Runs `cd frontend && npm ci && npm run test:coverage`. Requires **Node 22** locally (matching CI's `actions/setup-node` with `NODE_VERSION: 22`). To run manually without `make`: `cd frontend && npm ci && npm run test:coverage`. Does **not** add or modify any test files — it is a thin wrapper around the existing Vitest suite. |
-| `make update-requirements` | Regenerate pinned dependency lockfiles from current specs (**re-pin, not bump-to-latest**): backend `requirements.txt` from `requirements.in` via `pip-compile`; frontend `package-lock.json` from `package.json` via `npm install`. After running, always rebuild the stack (`docker compose build` or `make demo`) and re-run `make test-frontend` to confirm nothing broke. Requires `pip-tools` in `backend/.venv` (install with `cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools`). |
+| `make update-requirements` | Regenerate hash-pinned backend locks from `requirements/base.in` and `requirements/dev.in` plus the frontend `package-lock.json`. After running, rebuild the stack and re-run the tests. Requires `pip-tools` in `backend/.venv`. |
 | `make up` / `make down` | Start / stop the stack (data volume preserved) |
 | `make clean` | Stop and **wipe all data** (`docker compose down -v`) — fresh-demo reset |
 | `make logs` / `make ps` | Follow logs / show service status |
@@ -390,23 +390,34 @@ Migrations live in `backend/alembic/` and are generated from the models in
 `backend/alembic.ini`. Host-side tools run from `backend/` using the venv
 (`backend/.venv`, gitignored).
 
-### 6.0 Dependency lockfile (Module 8 hardening)
+### 6.0 Dependency management
 
-`backend/requirements.in` is the human-authored **spec**; `backend/requirements.txt`
-is the **pip-compiled lockfile** — every transitive dependency pinned `==` (31
-packages, all verified against the demo image of 2026-08-13) — and it is what
-both the Docker image and the dev venv install. Every `make demo` build
-installs **exactly these 31 pinned versions** no matter what PyPI releases
-later. Note: the lock is version-pinned but not hash-pinned (see the caveat in
-`Review.md` §Module 8).
+Backend dependencies are managed from `backend/requirements/base.in` and
+compiled to `backend/requirements/base.txt` with pinned versions and hashes.
+Test tooling is kept separately in `backend/requirements/dev.in` (which
+includes `-r base.in`) and `backend/requirements/dev.txt`. To regenerate a
+lockfile, edit its `.in` source and rerun `pip-compile --generate-hashes
+--strip-extras`; never hand-edit the compiled `.txt` output. Install runtime
+dependencies with:
 
 ```bash
-# Add / bump a dependency: edit requirements.in, then regenerate the lock:
+pip install --require-hashes -r backend/requirements/base.txt
+```
+
+For backend tests, install both `base.txt` and `dev.txt`.
+
+### 6.1 Dependency lockfile (Module 8 hardening)
+
+`backend/requirements/base.in` is the human-authored runtime spec;
+`backend/requirements/base.txt` is the hash-pinned compiled lockfile used by
+the Docker image and runtime installs. `dev.txt` extends it for tests. Every
+install uses `--require-hashes`.
+
+```bash
+# Add / bump a dependency: edit the relevant .in file, then regenerate:
 pip install pip-tools
-pip-compile requirements.in -o requirements.txt
-# commit BOTH requirements.in and requirements.txt together
-# (regenerate with the same Python the image uses — 3.14 — so transitive
-#  resolution can't drift; add --generate-hashes if you want hash pinning)
+pip-compile --generate-hashes --strip-extras --output-file=requirements/base.txt requirements/base.in
+pip-compile --generate-hashes --strip-extras --output-file=requirements/dev.txt requirements/dev.in
 ```
 
 The base image is pinned too: `python:3.14.6-slim` (exact patch verified in
@@ -422,7 +433,7 @@ hash-pinning caveat are in `Review.md` §Module 8.
 # One-time setup (per checkout)
 cd backend
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install --require-hashes -r requirements/base.txt
 
 export DATABASE_URL='postgresql+psycopg://trace:trace_local_password@localhost:5432/trace'
 ```
@@ -511,7 +522,7 @@ docker compose up -d db
 # 2. Host tooling
 cd backend
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install --require-hashes -r requirements/base.txt
 export DATABASE_URL='postgresql+psycopg://trace:trace_local_password@localhost:5432/trace'
 
 # 3. Migrate to head

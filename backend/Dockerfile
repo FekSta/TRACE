@@ -5,9 +5,8 @@
 # only prerequisite from a clean checkout.
 #
 # The Python base image is pinned to the exact patch version verified in the
-# demo (3.14.6) and requirements.txt is the pip-compiled LOCKFILE (all
-# transitive versions pinned ==, generated from requirements.in) — see
-# Review.md §Module 8.
+# demo (3.14.6) and requirements/base.txt is the hash-pinned pip-compiled
+# lockfile generated from requirements/base.in — see Review.md.
 FROM python:3.14.6-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -16,10 +15,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install dependencies first so image rebuilds only re-run pip on a
-# lockfile change. requirements.txt is the version-pinned lock (see
-# requirements.in for the human-readable spec).
-COPY requirements.in requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# lockfile change. requirements/base.txt is the hash-pinned lock (see
+# requirements/base.in for the human-readable spec).
+COPY requirements/base.txt requirements/base.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements/base.txt
 
 # Application code + startup script. .dockerignore keeps .venv/uploads/caches
 # out of the image.
