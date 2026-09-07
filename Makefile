@@ -79,11 +79,15 @@ check-migrations: ## Fail loudly unless alembic migration history has exactly on
 migrate-backend: ## Run Alembic migrations against the running backend container (idempotent — safe to re-run)
 	docker compose exec -T backend alembic upgrade head
 
-update-requirements-backend: ## Regenerate pinned backend requirements.txt from requirements.in (re-pin, not bump-to-latest)
-	@echo "=== Backend: regenerating requirements.txt from requirements.in ==="
+test-backend: ## Install hash-pinned backend dependencies and run backend tests
+	cd backend && .venv/bin/pip install --require-hashes -r requirements/base.txt -r requirements/dev.txt
+	cd backend && .venv/bin/python -m pytest
+
+update-requirements-backend: ## Regenerate hash-pinned backend requirements from requirements/base.in
+	@echo "=== Backend: regenerating requirements/base.txt from requirements/base.in ==="
 	cd backend && test -x .venv/bin/pip-compile || { echo "ERROR: pip-tools not found in backend/.venv — run 'cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools' first"; exit 1; }
-	cd backend && .venv/bin/pip-compile requirements.in -o requirements.txt
-	@echo "Backend requirements.txt regenerated."
+	cd backend && .venv/bin/pip-compile --generate-hashes --strip-extras --output-file=requirements/base.txt requirements/base.in
+	@echo "Backend requirements/base.txt regenerated."
 	@echo ""
 	@echo "Done. Rebuild the backend (docker compose build backend) and re-test before committing."
 

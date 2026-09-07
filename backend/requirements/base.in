@@ -1,0 +1,11 @@
+SQLAlchemy
+alembic
+psycopg[binary]
+fastapi
+uvicorn[standard]
+python-multipart
+PyJWT
+bcrypt
+python-dotenv
+email-validator
+httpx
