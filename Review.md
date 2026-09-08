@@ -114,7 +114,7 @@ a silent guess.
 |---|----------|-----------|
 | 1 | **JWT library: PyJWT 2.13.0** (not python-jose) | Actively maintained, pure Python (no `ecdsa`/`rsa`/`pyasn1` chain), frictionless on Python 3.14; python-jose is effectively unmaintained and heavier. `TRACE_Issues.md` permits either. |
 | 2 | **Password hashing: the `bcrypt` library directly** (5.0.0, `$2b$`), cost factor **12** (2^12 iterations) | passlib 1.7.4 is unmaintained and **breaks with bcrypt 5.x on Python 3.14** — verified empirically: its wrap-bug probe feeds bcrypt a >72-byte secret, which bcrypt 5.x now rejects with `ValueError`. The issue's "passlib/bcrypt" is satisfied by bcrypt itself. Passwords over bcrypt's 72-byte hard limit are truncated to 72 bytes in both hash and verify (bcrypt 5.x raises past 72 bytes; truncation keeps register/login 500-free). |
-| 3 | **Minimal token claims**: `sub`, `UserID`, `Role`, `iat`, `exp` | DoD requires `UserID` and `Role`; nothing else is needed. Trade-off: embedding `Role` lets clients (Module 7 portal selection) read it without a DB hit, but the backend **never trusts it** — `require_role` checks the live DB role, so role changes apply immediately (cost: one DB lookup per request, fine for Phase 1). |
+| 3 | **JWT identity claims**: `sub`, `UserID`, `Role`, `FirstName`, `LastName`, `iat`, `exp` | `UserID` and `Role` drive authentication and portal selection; `FirstName`/`LastName` let the authenticated shell display the user's full name and initials without a second identity request. The backend **never trusts client claims for authorization** — `require_role` checks the live DB role, so role changes apply immediately. |
 | 4 | **Token lifetime: 60 minutes** (`JWT_EXPIRE_MINUTES=60`) | Short enough to bound exposure; no refresh tokens (Module 2 didn't request them — see gaps). |
 | 5 | **`HTTPBearer(auto_error=False)`** in `get_current_user` | HTTPBearer's built-in missing-credential error is **403**; the auth contract and DoD require **401** for missing tokens, so the dependency raises 401 itself. |
 | 6 | **`JWT_SECRET` lengthened to 45 chars** in `.env`/`.env.example` | PyJWT warns on HS256 keys shorter than 32 bytes; the old 30-char dev value triggered it. |
@@ -399,6 +399,34 @@ pass. This is a workflow parity gap, not a packaging or test-code failure.
   page.
 - **No notifications read/ack surface** — `IsRead` stays false everywhere
   (unchanged Module 6 gap).
+
+## Bugfix — authenticated content disagreed with the session indicator (2026-09-08)
+
+**Root cause — Diagnostic Path B, bearer-header omission.** Browser evidence
+showed a valid User JWT in `localStorage`, `GET /matches` and the scoped item
+requests returning `200` with real User data, but `POST /matches/2/accept`
+returned `401 {"detail":"Not authenticated"}` because authenticated mutation
+call sites omitted the `Authorization` header; the red status toast was the
+backend's truthful response to that split path.
+
+**Fix:** `frontend/src/lib/api.ts` now uses the stored
+`trace.access_token` whenever a request does not provide an explicit token, so
+all portal mutations use the same bearer transport as list calls. The backend
+auth dependency and its 401/403 checks are unchanged; this is the minimal root
+fix because it closes the shared transport boundary rather than hiding the
+status or assuming authentication after a failure.
+
+**Verification:** the rebuilt browser flow returned `200` for the accept request
+and displayed “Match accepted — your claim has been submitted.” User login
+landed on `/user`; Officer and Administrator logins landed on `/officer` and
+`/admin`; after logout, storage was empty and a subsequent `/matches` request
+returned `401`. Direct curl checks confirmed all three seeded roles received
+valid JWTs and `200` from `/matches` while anonymous access returned `401`.
+
+**Risk surfaced:** every future authenticated mutation should go through the
+shared API client; focused client tests and a browser smoke test should remain
+part of the frontend verification gate so a newly added bypass cannot recreate
+this mixed-state failure.
 
 ---
 

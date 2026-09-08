@@ -6,10 +6,8 @@
 > This is the hand-written technical reference for the **whole app**, kept in the
 > same style and level of detail as an `api.md`: endpoint tables, request/response
 > examples, error formats, a quick end-to-end test sequence, env var knobs, and
-> testing notes. Since Milestones 0–1 expose no HTTP API yet, this document
-> currently documents what *does* exist: the local database, the ORM models, and
-> the migration/seed workflow. As later milestones add real endpoints, this
-> document grows to look exactly like `api.md` does for auth today.
+> testing notes. It records the current full-stack behavior: the local database,
+> ORM models, FastAPI endpoints, React client, and migration/seed workflow.
 >
 > **Authoritative sources**
 > - `ABOUT.md` — system architecture (binding)
@@ -564,6 +562,8 @@ referenced in this same style.
   | `sub` | string | Standard subject — user id as a string |
   | `UserID` | int | User primary key (DoD-required claim) |
   | `Role` | string | Role at issue time (`User`/`Officer`/`Administrator`) — **informational**; authorization re-checks the live DB role |
+  | `FirstName` | string | First name used by the frontend identity display |
+  | `LastName` | string | Last name used by the frontend identity display |
   | `iat` | int | Issued-at epoch seconds |
   | `exp` | int | Expiry epoch seconds |
 
@@ -1475,6 +1475,12 @@ amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
   the user out. Expired tokens are detected client-side and cleared (no
   refresh tokens in this milestone). Storage-choice trade-off documented in
   `Review.md` §Module 7.
+- **Authenticated requests**: `frontend/src/lib/api.ts` is the shared transport
+  boundary. When a call does not pass an explicit token, it reads the current
+  `trace.access_token` from storage and sends `Authorization: Bearer <token>`.
+  This covers portal mutations as well as the `useAuthedFetch` list calls; the
+  backend remains authoritative and still returns 401/403 for missing or invalid
+  credentials.
 
 ### 13.4 Portal → endpoint map (and demo translation record)
 
