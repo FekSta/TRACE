@@ -4,6 +4,8 @@
  * that document exactly; the real API wins over any mockup assumption.
  */
 
+import { getStoredToken } from "./auth";
+
 const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export class ApiError extends Error {
@@ -40,7 +42,8 @@ function extractDetail(data: unknown, fallback: string): string {
 
 async function request<T>(path: string, opts: RequestOptions): Promise<T> {
   const headers: Record<string, string> = {};
-  if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+  const token = opts.token ?? getStoredToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.body !== undefined && !opts.isForm) headers["Content-Type"] = "application/json";
 
   let body: BodyInit | undefined;
