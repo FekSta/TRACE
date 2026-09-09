@@ -1,4 +1,3 @@
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
@@ -7,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 import app.models  # noqa: F401
 from alembic import context
 from app.db import Base
+from app.config import DATABASE_URL
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -21,10 +21,11 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
-# TRACE: prefer the DATABASE_URL environment variable (set by .env / the host
-# shell); fall back to the dev URL in alembic.ini.
-if os.environ.get("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+# TRACE: the canonical config loader (app.config) reads DATABASE_URL from the
+# repo-root `.env` (or the container environment) and fails fast when missing.
+# There is deliberately no fallback literal in alembic.ini anymore (Retrofit
+# 2026-09-08, see Review.md) — importing app.models above already loaded `.env`.
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

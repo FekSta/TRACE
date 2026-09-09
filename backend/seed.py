@@ -24,16 +24,17 @@ What it seeds, in order:
 Run from ``backend/``:
 
     cd backend
-    DATABASE_URL=postgresql+psycopg://trace:trace_local_password@localhost:5432/trace \
-        .venv/bin/python seed.py
+    .venv/bin/python seed.py
 
-Without ``DATABASE_URL`` it falls back to the local dev default
-(``postgresql+psycopg://trace:trace_local_password@localhost:5432/trace``).
+``DATABASE_URL`` comes from the repo-root ``.env`` (loaded automatically by
+``app.config``, the canonical loader — see `Review.md` Retrofit 2026-09-08),
+or from the ``DATABASE_URL`` env var when running inside the compose backend
+container (set by docker-compose.yml). There is no script-local fallback
+literal.
 """
 
 from __future__ import annotations
 
-import os
 from datetime import date
 
 from sqlalchemy import create_engine, func, select
@@ -51,8 +52,7 @@ from app.models.enums import (
 from app.modules.auth.security import hash_password
 from app.modules.matching.service import run_matching_for_found_item
 from app.modules.matching.utils.similarity import MATCH_THRESHOLD
-
-DEFAULT_URL = "postgresql+psycopg://trace:trace_local_password@localhost:5432/trace"
+from app.config import DATABASE_URL
 
 # Exact names from `assets/diagrams/data-flow.md` ("Maintain Categories").
 STARTER_CATEGORIES = [
@@ -396,8 +396,7 @@ def _run_matching_and_verify(session: Session, pairs: list[tuple[LostItem, Found
 
 
 def main() -> None:
-    url = os.environ.get("DATABASE_URL", DEFAULT_URL)
-    engine = create_engine(url)
+    engine = create_engine(DATABASE_URL)
     with Session(engine) as session:
         print("Seeding categories…")
         _seed_categories(session)

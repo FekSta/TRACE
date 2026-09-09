@@ -51,7 +51,9 @@ from sqlalchemy.pool import StaticPool
 # We also set a test JWT secret and dummy DB URL so the app can import.
 os.environ["ENVIRONMENT"] = "ci"
 os.environ["JWT_SECRET"] = "test-secret-for-unit-tests-only"
+os.environ["JWT_EXPIRE_MINUTES"] = "60"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["STORAGE_BACKEND"] = "local"
 os.environ["EMAIL_BACKEND"] = "smtp"
 os.environ["SMTP_HOST"] = "localhost"
 os.environ["SMTP_PORT"] = "1025"
