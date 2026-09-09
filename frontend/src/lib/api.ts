@@ -6,7 +6,13 @@
 
 import { getStoredToken } from "./auth";
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+// The API base URL is supplied at BUILD time from the environment — never a
+// hardcoded fallback (single source of truth, see Review.md Retrofit
+// 2026-09-08):
+//   - dockerized build: repo-root `.env` VITE_API_URL → docker-compose
+//     `build.args` → Dockerfile ARG/ENV → `vite build`
+//   - host dev (`npm run dev`): frontend/.env (copy frontend/.env.example)
+const API_URL: string = import.meta.env.VITE_API_URL;
 
 export class ApiError extends Error {
   status: number;

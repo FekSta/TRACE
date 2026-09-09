@@ -13,10 +13,13 @@ RUN npm ci
 
 COPY . .
 
-# The API base URL is baked in at build time. The browser calls the
-# host-published backend directly (http://localhost:8000), which the backend
-# CORS middleware already allows from the frontend origin (:5173).
-ARG VITE_API_URL=http://localhost:8000
+# The API base URL is baked in at build time. Its value comes ONLY from
+# docker-compose.yml's `build.args` (sourced from the repo-root `.env` via
+# ${VITE_API_URL:-...}) — there is deliberately no hardcoded default here, so
+# `.env` stays the single source of truth (Retrofit 2026-09-08, Review.md).
+# Vite reads VITE_API_URL from the environment during `vite build`; the ENV
+# line also persists it into the build stage for clarity.
+ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
 
 RUN npm run build

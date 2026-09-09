@@ -13,9 +13,15 @@
 #   test.in  -> test.txt   base.txt + test-only deps (pytest, pytest-asyncio,
 #                           pytest-cov) — installed on top of .venv for `make test-backend`
 # The backend Docker image itself should only ever install requirements/base.txt.
+#
+# Load the repo-root `.env` (gitignored) so local dev/test targets source the
+# same credentials as docker-compose. The `-` prefix means a missing `.env` is
+# fine (compose inlines its own defaults); targets that need credentials
+# (e.g. test-backend) document that requirement.
+-include .env
 
 .PHONY: demo seed up down clean logs ps \
-	venv check-migrations migrate-backend \
+	venv check-env check-migrations migrate-backend \
 	update-requirements-backend update-requirements-frontend update-requirements \
 	test-frontend test-backend test \
 	lint-backend lint-backend-fix
@@ -81,6 +87,29 @@ venv: ## Create backend/.venv and install local dev dependencies (requirements/l
 #     already-running stack, re-run on demand without restarting the backend).
 # Both coexist precisely because each covers a case the other doesn't.
 #
+check-env: ## Validate that .env exists and defines every variable from .env.example
+	@if [ ! -f .env ]; then \
+	  echo "ERROR: .env not found — copy it first:  cp .env.example .env"; \
+	  exit 1; \
+	fi; \
+	FAIL=0; \
+	for v in $$(sed -nE 's/^([A-Z_][A-Z0-9_]*)=.*/\1/p' .env.example | sort -u); do \
+	  grep -qE "^$$v=" .env || { echo "  missing: $$v"; FAIL=1; }; \
+	done; \
+	if [ "$$FAIL" -ne 0 ]; then \
+	  echo "ERROR: .env is missing variable(s) listed above (all defined in .env.example)."; \
+	  echo "Fix: cp .env.example .env, then edit values."; \
+	  exit 1; \
+	fi; \
+	echo "OK: .env defines every variable from .env.example."; \
+	EXTRA=0; \
+	for v in $$(sed -nE 's/^([A-Z_][A-Z0-9_]*)=.*/\1/p' .env | sort -u); do \
+	  grep -qE "^$$v=" .env.example || { echo "  extra (not in .env.example): $$v"; EXTRA=1; }; \
+	done; \
+	if [ "$$EXTRA" -ne 0 ]; then \
+	  echo "WARNING: .env has extra variable(s) — stale entries (e.g. a removed JWT_ALGORITHM) can confuse; consider removing them."; \
+	fi
+
 check-migrations: ## Fail loudly unless alembic migration history has exactly one head
 	@cd backend && test -x .venv/bin/alembic || { echo "ERROR: backend/.venv is missing or lacks alembic — run 'make venv' first"; exit 1; }
 	@HEADS="$$(cd backend && .venv/bin/alembic heads 2>/dev/null | grep -c '(head)' || true)"; \
@@ -121,20 +150,13 @@ test-backend: ## Run the backend unit + coverage test suite locally (same suite 
 	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'make venv' first"; exit 1; }
 	cd backend && .venv/bin/pip install --quiet -r requirements/test.txt
 	@echo "Backend tests need a reachable Postgres test DB (trace_test) on localhost:5432."
-	@echo "If one isn't running: docker compose up -d db  (then create/point TEST_DATABASE_URL at a trace_test DB)"
+	@echo "Credentials come from .env (copy .env.example): POSTGRES_USER / POSTGRES_PASSWORD."
+	@echo "If one isn't running: docker compose up -d db  (then create the trace_test DB)"
 	cd backend && \
-	  JWT_SECRET=ci-only-change-this-development-secret \
-	  EMAIL_BACKEND=smtp \
-	  SMTP_HOST=localhost \
-	  SMTP_PORT=25 \
-	  TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql+psycopg://trace:trace_local_password@localhost:5432/trace_test} \
+	  TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/trace_test} \
 	  .venv/bin/python -m pytest --no-cov -v -m "not integration"
 	cd backend && \
-	  JWT_SECRET=ci-only-change-this-development-secret \
-	  EMAIL_BACKEND=smtp \
-	  SMTP_HOST=localhost \
-	  SMTP_PORT=25 \
-	  TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql+psycopg://trace:trace_local_password@localhost:5432/trace_test} \
+	  TEST_DATABASE_URL=$${TEST_DATABASE_URL:-postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/trace_test} \
 	  .venv/bin/python -m pytest -v --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml
 
 test: test-backend test-frontend ## Run both backend and frontend test suites locally

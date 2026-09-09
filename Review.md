@@ -777,3 +777,194 @@ weakened — `RequireRole` and `require_role` are untouched.
   broken. `Notes.md` §13.3 was corrected in place to document the
   now-authoritative login step (token stored **and** context session
   established).
+
+---
+
+## Retrofit — hardcoded config → `.env` as the single source of truth (2026-09-08)
+
+**Scope:** configuration plumbing only. No module business logic, endpoint, or
+behavior changed; the retrofit re-wires *where* every environment-dependent
+value comes from. `ABOUT.md` promised that swapping Phase 1 ↔ Phase 2 means
+changing env vars only, and `Notes.md` documented env vars from Module 1
+onward — but several values had drifted back to hardcoded literals, and a
+repo-wide grep for a `.env` value would have matched code and config files.
+This section records what was found, what was chosen, and what is deliberately
+exempt.
+
+### What was found hardcoded, where, and why it likely happened
+
+| Value (`.env` var) | Where it was hardcoded | Why it likely happened | Resolution |
+|---|---|---|---|
+| `DATABASE_URL` | `backend/app/config.py` fallback default; `backend/app/database.py` (**dead file**, `postgresql+asyncpg://…`, unused since the sync engine moved to `app/db.py`); `backend/seed.py` `DEFAULT_URL`; `backend/alembic.ini` `sqlalchemy.url` | Each milestone verified its DoD against a *working* hardcoded value and the `.env` wiring was never completed (the Module 1 Review §4 gap literally said "the connection string is duplicated in `alembic.ini`, `.env`/`.env.example`, and `seed.py`'s fallback"). | `config.py` is the **sole** canonical loader — every var is now *required* (fail-fast with a pointer to `.env.example`), no fallback literals. `database.py` deleted; `seed.py` and `alembic/env.py` import `DATABASE_URL` from `app.config`; `alembic.ini`'s URL blanked (env.py always overrides). |
+| `POSTGRES_PASSWORD` / `POSTGRES_USER` / `POSTGRES_DB` | `Makefile` `test-backend` `TEST_DATABASE_URL` literal; CI workflow `POSTGRES_PASSWORD` | Copy-paste from Module 8's verification run | Makefile now `-include .env` and composes the URL from `$(POSTGRES_USER):$(POSTGRES_PASSWORD)`; CI uses **distinct** `ci_*` values (CI has no `.env` and its dummy values should never collide with dev values). |
+| `JWT_SECRET` | `config.py` fallback default; `Makefile` test exports | Same as above | Required in `config.py`; Makefile test exports removed (conftest sets a test secret itself); CI value made distinct. |
+| `VITE_API_URL` | `frontend/Dockerfile` `ARG VITE_API_URL=http://localhost:8000` default; `frontend/src/lib/api.ts` `?? "http://localhost:8000"` fallback | Module 8 decision 1 documented the build-time bake; the Dockerfile default and the `api.ts` fallback silently duplicated `.env` | Dockerfile `ARG` has **no default** (value comes only from compose `build.args` ← `.env`); `api.ts` reads `import.meta.env.VITE_API_URL` with no fallback. |
+| `SMTP_FROM` / `EMAIL_BACKEND` / `SMTP_HOST` / `SMTP_PORT` / `STORAGE_BACKEND` / `UPLOAD_DIR` / `JWT_EXPIRE_MINUTES` | `config.py` fallback defaults | Same class as `DATABASE_URL` | All required in `config.py`. `SMTP_HOST` in `.env`/`.env.example` corrected from `mailpit` → `localhost` (the host-side backend cannot resolve `mailpit`; the compose container pins `mailpit` anyway — the old value silently broke host-side email). `UPLOAD_DIR` value corrected from `backend/uploads` → `uploads` (resolved relative to the backend working dir; `backend/uploads` + the documented `cd backend` flow created a stray `backend/backend/uploads` — proven during verification). |
+
+### The `docker-compose.yml` pattern chosen: explicit `environment:` + `${VAR}` interpolation (no `env_file:`) — and why
+
+- **Not `env_file: .env`.** The repo `.env` holds *host-side* values (`DATABASE_URL` on `localhost`, `SMTP_HOST=localhost`) that must never reach a container. `env_file:` would feed exactly those wrong values in.
+- **Explicit `environment:` blocks** with `DATABASE_URL` composed from the `POSTGRES_*` vars (host `db`) — the Module 8 decision-6 pattern, kept and documented in the file header. This is the only place a container-facing URL is constructed; the `.env` `DATABASE_URL` remains host-side-only by design.
+- **`${VAR:-default}` fallbacks kept.** The defaults are the same dev values as `.env.example`, so a fresh checkout boots before `.env` is copied (Milestone-1 decision 11). This retrofit **refines** decision 11: `.env` is now the *documented* configuration mechanism and the fallbacks are explicitly *not* a second source — they exist only for the no-`.env` bootstrap. Decision 11's "no `.env` needed" claim now means "works with the default dev values".
+- **`STORAGE_BACKEND`/`EMAIL_BACKEND`/`SMTP_HOST`/`SMTP_PORT`/`UPLOAD_DIR` stay PINNED** in the backend service (`local`/`smtp`/`mailpit`/`1025`/`/app/uploads`) — a deliberate exception preserved from Module 8 decision 6: a stray Phase-2 value in the host `.env` (e.g. `EMAIL_BACKEND=resend`) must never crash the demo container at import; Phase 2 switches via a compose override instead. These are compose-network values, not environment values.
+
+### Build-time vs runtime — the frontend specifically
+
+`VITE_API_URL` is a **build-time** value: Vite statically replaces
+`import.meta.env.VITE_API_URL` while building the bundle, so a runtime-only
+`environment:` entry on the `frontend` service would *look* correct and do
+nothing. The verified plumbing is:
+
+```text
+.env (repo root)
+  └─ VITE_API_URL=${VITE_API_URL:-…}  →  docker-compose.yml `build.args`
+       └─ Dockerfile `ARG VITE_API_URL` (no default) → `ENV VITE_API_URL=$VITE_API_URL`
+            └─ vite build  →  baked into dist bundle  →  frontend/src/lib/api.ts
+```
+
+**Verified by actually rebuilding with a changed value** (not by reading the
+plumbing): with `VITE_API_URL=http://localhost:9999` in `.env` and a rebuilt
+frontend image, the served bundle (`index-BNtwTAFu.js`) contained
+`http://localhost:9999` and **zero** occurrences of `http://localhost:8000`;
+with the value restored, the rebuilt bundle went back to `:8000`. The running
+frontend container exposes no `VITE_API_URL` env at all — static bundle only —
+proving a runtime-only mechanism could not have worked. One caveat surfaced:
+this machine's shell had `VITE_API_URL` exported, and **Docker Compose gives
+shell-exported variables precedence over `.env`** (same class as the Module 1
+"stale `DATABASE_URL` in the shell" note) — the test was run with the vars
+unset. For compose, unset stale TRACE vars in the shell or they win over `.env`.
+
+### `.env.example` completeness; `.env` gitignored
+
+- `.env.example` (repo root) now lists **every** variable any file reads
+  (`POSTGRES_DB/USER/PASSWORD`, `DATABASE_URL`, `JWT_SECRET`,
+  `JWT_EXPIRE_MINUTES`, `STORAGE_BACKEND`, `UPLOAD_DIR`, `EMAIL_BACKEND`,
+  `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `VITE_API_URL`) with placeholder
+  values and one-line comments. `frontend/.env.example` covers host-dev
+  `VITE_API_URL`. `JWT_ALGORITHM` was **removed** from `.env.example` — it is a
+  fixed constant now (below).
+- `.env` (repo root) **and** `frontend/.env` are git-ignored (root `.gitignore`
+  `.env` rule matches at any depth — verified with `git check-ignore`);
+  `.env.example` files are committed. `[TEMPLATE]` junk lines at the top of the
+  old `.env.example`/`.env` were removed.
+
+### Deliberate exceptions — values that must NOT move to `.env`
+
+A value is exempt when it is a *fixed application constant* (the same in every
+environment) rather than an *environment-dependent* value:
+
+| Constant | Where | Why it stays |
+|---|---|---|
+| `JWT_ALGORITHM = "HS256"` | `config.py` | Signing algorithm is fixed for the app; not environment-dependent. Was an env var with a default — now a constant so no literal default exists. |
+| `BCRYPT_ROUNDS = 12` | `config.py` | Security constant (cost factor), deliberately not configurable per environment. |
+| `MATCH_THRESHOLD = 60.00` | `matching/utils/similarity.py` | Matching-engine tuning constant, not infra config. |
+| Compose-network pins | `docker-compose.yml` | `STORAGE_BACKEND: local`, `EMAIL_BACKEND: smtp`, `SMTP_HOST: mailpit`, `SMTP_PORT: 1025`, `UPLOAD_DIR: /app/uploads` are properties of the compose topology (Phase 1 demo), deliberately pinned per Module 8 decision 6. |
+| CI-only test values | `.github/workflows/backend-unit-tests.yml` | CI has no `.env`; its `ci_*` dummy credentials are defined in the workflow itself and are now deliberately **distinct** from dev values. |
+| Seeded demo credentials | `backend/seed.py` | `ada@example.com` / `SuperSecret1!` etc. are seed **data** (application constants), not configuration. |
+| Service addresses in docs/runtime checks | `Notes.md` curl examples, `Tutorial.md`, compose healthcheck, Makefile wait loop/echo | `http://localhost:8000` / `:5173` / `:8025` in docs and runtime probes are the app's published addresses, not duplicated configuration. |
+| Test expectation | `backend/tests/test_notifications.py` | Asserts `from_address` is conftest's value **or** `.env`'s (`no-reply@trace.local`) — documents the documented `load_dotenv(override=True)` behavior, not config. |
+
+### DoD grep proof (repo-wide, post-change)
+
+Run with `--exclude-dir={.git,node_modules,.venv,dist,__pycache__,.pytest_cache,coverage}`. "Legit" = `.env`/`.env.example`, `${VAR:-default}` interpolation, or `ARG`.
+
+```text
+$ grep -rn 'trace_local_password' .          # POSTGRES_PASSWORD value
+  docker-compose.yml:46,64    ${POSTGRES_PASSWORD:-…} / DATABASE_URL composed from it  (legit interpolation)
+  .env / .env.example                         (legit)
+  Tutorial.md:50              demo-credential documentation                          (doc)
+  → NO matches in code/config/scripts anymore (config.py, seed.py, alembic.ini, database.py, Makefile, CI all fixed)
+
+$ grep -rn 'postgresql+psycopg://trace:trace_local_password@localhost:5432/trace' .   # full DATABASE_URL value
+  .env / .env.example                         (legit) — nothing else
+
+$ grep -rn 'change-this-development-secret' .  # JWT_SECRET value fragment
+  docker-compose.yml:65      ${JWT_SECRET:-…}  (legit interpolation)
+  .env / .env.example                         (legit) — nothing else (config.py default gone; CI/Makefile values now distinct)
+
+$ grep -rn 'no-reply@trace.local' .           # SMTP_FROM value
+  docker-compose.yml:76      ${SMTP_FROM:-…}  (legit interpolation)
+  .env / .env.example                         (legit)
+  backend/tests/test_notifications.py:151-152 (deliberate test expectation, above)
+
+$ grep -rn 'backend/uploads' .                # UPLOAD_DIR-related literal
+  .env / .env.example                         (legit)
+  gitignore rules, .gitkeep comment, storage.py docstring, Notes.md §2.1/§9.7, Review.md history  (documentation)
+
+$ grep -rn 'http://localhost:8000' .          # VITE_API_URL value
+  docker-compose.yml:29,88,102  docs + healthcheck + ${VITE_API_URL:-…} (legit; :88 is the published-port health probe)
+  .env / .env.example / frontend/.env.example (legit)
+  Notes.md / Tutorial.md / frontend/README.md curl examples + service table   (runtime service address — doc exception)
+  Makefile:33,47               health wait + echo (runtime address)
+  Review.md:332,439            historical decision record
+  → NO matches in frontend/Dockerfile or frontend/src/lib/api.ts anymore (both fixed)
+```
+
+Every match outside `.env`/`.env.example`/interpolation falls into a listed
+deliberate-exception category (documentation of the running service, historical
+decision record, test expectation, CI-defined values). Note: **this section
+itself** now contains the quoted values (the findings table and this grep
+proof) — that is the required durable proof of the search, in the decision
+record, not a configuration source. `Notes.md` was deliberately kept free of
+every one of these literals.
+
+### Known gaps / risks carried forward
+
+- **Module 9's cloud env vars (`SUPABASE_*`, `RESEND_API_KEY`) remain unaudited** — this retrofit did not invent or move hardcoding into Module 9's future work; those vars do not exist anywhere in the repo yet, so there is nothing to migrate. When Module 9 lands, its values must follow this same pattern (`.env` → compose/`build.args`; `SUPABASE_*`/`RESEND_API_KEY` via a Phase-2 compose override, per Module 8 decision 6).
+- **`STORAGE_BACKEND` is now read by `config.py` but still not consumed by `storage.py`** — Phase 1 pins `LocalDiskStorage`; Module 9's `SupabaseStorage` selection is the consumer. Listed in `.env.example` and validated at import so a typo fails fast today.
+- **Shell-exported vars override `.env` for docker-compose** (documented compose precedence) and are beaten by `.env` inside the backend (`load_dotenv(override=True)`). A stale exported `DATABASE_URL`/`VITE_API_URL`/`POSTGRES_*` in the shell caused confusion during verification — unset them or run in a clean shell.
+- **`UPLOAD_DIR=uploads` is relative** — correct for the documented `cd backend` host-side flow (lands at `backend/uploads/`), but a host-side run from the repo root would land at `<repo>/uploads`. The container pins the absolute `/app/uploads`, so the demo is unaffected.
+- **CI values are now distinct from dev values** (`ci_postgres_password`, `ci-only-jwt-secret-for-unit-tests`) — if the CI Postgres service password ever needs to match `.env`, that coupling must be deliberate.
+- **`app/database.py` deleted** — confirm nothing outside `backend/` imported it (none did). The sync engine of record is `app/db.py`.
+
+---
+
+## Module 9 — env wiring forward plan (2026-09-08)
+
+A plan, **not implementation** (Module 9 is "not started", Notes.md §14). It
+locks in how the retrofit's `.env` discipline carries into the cloud phase so
+the hardcoding bug cannot re-enter through Module 9.
+
+### Planned env vars (Phase 2 — all from `.env`, same rules as this retrofit)
+
+| Var | Consumed by | Build or runtime | Notes |
+|---|---|---|---|
+| `SUPABASE_URL` | `config.py` → `SupabaseStorage` | runtime | Set only when `STORAGE_BACKEND=supabase` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `config.py` → `SupabaseStorage` | runtime | **Secret** — `.env` only, never committed, never in `.env.example` as a real value |
+| `SUPABASE_STORAGE_BUCKET` | `config.py` → `SupabaseStorage` | runtime | Bucket name |
+| `RESEND_API_KEY` | `config.py` → `ResendEmailBackend` (`email_backend.py` `resend` branch) | runtime | **Secret** — `.env` only |
+| `DATABASE_URL` (Phase-2 value) | compose **override** → backend container; host tools unchanged | runtime | Supabase-hosted Postgres URL — must be injected via the Phase-2 compose override (below), **not** the `POSTGRES_*`-composed default |
+| `VITE_API_URL` (Phase-2 value) | compose `build.args` (already plumbed by this retrofit) or the hosting provider's env | **build-time** | Hosted frontend URL |
+
+### Mechanism (consistent with Module 8 decision 6 and this retrofit)
+
+- Phase 2 ships a **compose override** (`docker-compose.override.yml`, or a
+  `docker-compose.phase2.yml` invoked as `docker compose -f docker-compose.yml
+  -f docker-compose.phase2.yml up`) that:
+  - sets `backend.environment.DATABASE_URL` to `${DATABASE_URL}` **directly**
+    (the Supabase URL), replacing the `POSTGRES_*`-composed default;
+  - unpins the Phase-1 selectors (`STORAGE_BACKEND: ${STORAGE_BACKEND}`,
+    `EMAIL_BACKEND: ${EMAIL_BACKEND}`), drops the `SMTP_*`/`UPLOAD_DIR` pins,
+    and adds `RESEND_API_KEY` + `SUPABASE_*`;
+  - stops publishing `5432` on the host (no local `db` service needed).
+- `config.py` adds the new vars with the same `_require` pattern, ideally
+  **validated only when the matching backend is selected** (fail-fast on
+  `STORAGE_BACKEND=supabase` without `SUPABASE_URL`, on `EMAIL_BACKEND=resend`
+  without `RESEND_API_KEY`) so the Phase-1 demo boots with zero new vars.
+- `.env.example` grows the new vars (placeholders) the moment Module 9 lands;
+  `.env` stays gitignored. **No Vault / AWS Secrets Manager** — `.env` remains
+  the mechanism for both phases per `ABOUT.md`.
+- CORS: `backend/app/main.py`'s allow-list must add the hosted frontend
+  origin (Module 7 flagged this) — a Module 9 code change, not this retrofit.
+- Same DoD as this retrofit: a repo-wide grep for any new value must match
+  only `.env`/`.env.example`/interpolation, and changing a value in `.env`
+  alone must take effect on rebuild (build-time: `VITE_API_URL`) or redeploy
+  (runtime: secrets).
+
+### Why not done now
+
+Module 9 is out of scope ("not started", Notes.md §14). The retrofit's job was
+to prove the plumbing — which the two change-tests did (a `.env`-only
+`VITE_API_URL` change reached the rebuilt bundle; a `.env`-only
+`POSTGRES_PASSWORD` change re-keyed the database and the container connection).
+When Module 9 starts, this plan is its wiring checklist.
