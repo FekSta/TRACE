@@ -717,6 +717,107 @@ are `422` with a `detail` array. Codes in use so far:
 | `409` | Duplicate email on register |
 | `422` | Request body validation failure |
 
+### 8.8 Administrator user management (retrofit)
+
+The Auth module owns account CRUD. These routes require a Bearer token whose
+live database role is `Administrator`; they only manage `User` and `Officer`
+accounts. An attempted `Administrator` role returns `400`, and Administrator
+accounts are excluded from listing and cannot be targeted (`403`).
+
+| Method | Path | Auth required | Purpose |
+|---|---|---|---|
+| `GET` | `/admin/users?role=Officer&status=Active` | Administrator | List managed accounts with optional Role/Status filters |
+| `POST` | `/admin/users` | Administrator | Create a User or Officer and queue login-details email |
+| `PUT` | `/admin/users/{id}` | Administrator | Update editable account fields |
+| `DELETE` | `/admin/users/{id}` | Administrator | Soft-delete by setting `Status=Inactive` |
+
+#### `GET /admin/users`
+
+Filters accept the exact enum values `role=User|Officer` and
+`status=Active|Suspended|Inactive`. The response is a list of the normal User
+fields and never includes Administrator accounts.
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  'http://localhost:8000/admin/users?role=Officer&status=Active'
+```
+
+Errors: `400` (attempted Administrator role filter), `401` (missing/invalid
+token), `403` (non-Administrator caller).
+
+#### `POST /admin/users`
+
+Request body:
+
+```json
+{"first_name":"Grace","last_name":"Hopper","student_number":"o42",
+ "email":"grace@example.com","phone_number":"+2712","role":"Officer",
+ "status":"Active","password":"Temporary123!"}
+```
+
+`Password` is optional for the local grading/demo pilot. When omitted, the
+server generates a temporary password. Either value is hashed with the same
+bcrypt cost-12 scheme as self-registration; the plain value is included only
+in the queued account-created email. `201 Created` returns the created User
+fields. Email delivery does not delay the response.
+
+```bash
+curl -X POST http://localhost:8000/admin/users \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"first_name":"Grace","last_name":"Hopper","email":"grace@example.com","role":"Officer"}'
+```
+
+Errors: `400` (role Administrator), `401`, `403`, `409` (duplicate email),
+`422` (invalid body).
+
+#### `PUT /admin/users/{id}`
+
+Accepts any of `first_name`, `last_name`, `student_number`, `email`,
+`phone_number`, `role`, and `status`. Role is limited to `User`/`Officer` and
+an Administrator target returns `403`. Moving an account to `Suspended` or
+`Inactive` makes `/auth/login` reject it with `403`.
+
+```bash
+curl -X PUT http://localhost:8000/admin/users/42 \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"status":"Suspended","phone_number":"+27120000000"}'
+```
+
+Errors: `400` (Administrator role), `401`, `403`, `404`, `409` (duplicate
+email), `422` (invalid body).
+
+#### `DELETE /admin/users/{id}`
+
+This is a soft delete, not a SQL `DELETE`: it is an alias for setting
+`Status=Inactive`, following the `Category.Status=Archived` precedent. `PUT`
+with `{"status":"Inactive"}` and `DELETE` have the same resulting account
+state; both write one `AuditLog` row, with actions `UserUpdated` and
+`UserDeleted` respectively. The account row is retained for audit/history.
+
+```bash
+curl -X DELETE http://localhost:8000/admin/users/42 \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+Errors: `401`, `403` (including Administrator target), `404`.
+
+#### Admin account-management sequence
+
+```bash
+ADMIN_TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"TestPass123!"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl -s -X POST http://localhost:8000/admin/users -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"first_name":"Grace","last_name":"Hopper","email":"grace@example.com","role":"Officer"}'
+# Open http://localhost:8025 and read the credentials email.
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8000/admin/users
+OFFICER_TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"grace@example.com","password":"<password from Mailpit>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+curl -X PUT http://localhost:8000/admin/users/<id> -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"status":"Inactive"}'
+curl -i -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"grace@example.com","password":"<password from Mailpit>"}' # 403
+```
+
 ### 8.5 `require_role` usage pattern (copy-paste for Modules 3–6)
 
 ```python
@@ -1359,6 +1460,7 @@ responses never wait on email.
 | 3 | Claim **approved** | `claims/router.py` verify endpoint (BackgroundTask) | `Claim` | "TRACE: your claim was approved" (claimant) |
 | 4 | Item ready for collection | `claims/router.py` verify endpoint, on approve (BackgroundTask) | `Claim` | "TRACE: your item is ready for collection" (claimant) |
 | 5 | Claim **rejected** | `claims/router.py` verify endpoint (BackgroundTask) | `Claim` | "TRACE: your claim was rejected" + officer notes (claimant) |
+| 6 | Account created by Admin | `auth/admin_router.py` create endpoint (BackgroundTask) | `System` | "TRACE: your account was created" (new account) |
 
 Interpretation note: "item ready for collection" is fired together with
 "claim approved" — once a claim is approved the FoundItem is ready to be

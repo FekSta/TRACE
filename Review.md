@@ -961,6 +961,54 @@ reports for the four core entities, from the Admin portal only.
   Notifications/Audit Log views still show explained gap panels). Only
   `GET /dashboard/reports` landed in this pass.
 
+## Retrofit — Administrator User Management (2026-09-10)
+
+This was missing because the Administrator "Maintain Users" flow was documented
+in `assets/diagrams/data-flow.md`, but no milestone issue ever implemented it.
+This retrofit closes that specific gap inside Auth, without creating a parallel
+Users module or changing Items, Matching, Claims, or Dashboard reporting.
+
+### Decisions
+
+- `DELETE /admin/users/{id}` is a soft delete: it sets `User.Status=Inactive`
+  and retains the row. This mirrors the Module 3 `Category.Status=Archived`
+  precedent and preserves foreign-key history and auditability. A PUT to
+  `{"status":"Inactive"}` reaches the same final state; the operations differ
+  only in their audit action (`UserUpdated` versus `UserDeleted`).
+- Administrators can create and edit `User` and `Officer` accounts identically;
+  the editable fields are names, student/employee number, email, phone, role,
+  and status. This surface cannot create, edit into, list, or delete an
+  `Administrator` account.
+- `POST /admin/users` currently accepts an optional client-supplied `Password`
+  so grading/demo credentials can be predictable. When omitted, the server
+  generates a temporary password. Both paths use the exact self-registration
+  bcrypt hashing scheme (direct bcrypt, cost 12).
+
+> **TODO after grading: remove the client-supplied `Password` path.** The
+> endpoint must return to always generating the password server-side, matching
+> the original design intent. This is a temporary demo exception, not a settled
+> long-term decision.
+
+- Account creation writes the `Notification` row first and queues the existing
+  `EmailBackend.send(to, subject, body)` call as a `BackgroundTask`. A simulated
+  SMTP failure was verified to leave both the API response and the `System`
+  Notification row unaffected.
+
+### Verification and known gaps
+
+The focused backend tests verified one AuditLog row per create, update, and
+delete/deactivate call, User/Officer 403 gating, Administrator-role rejection,
+inactive-login rejection, and notification persistence after email failure. The
+frontend build verified the Admin list plus modal form path. Remaining risks:
+
+- **The client-supplied password TODO above is the highest-priority gap.**
+- There is no forced-password-change-on-first-login flow.
+- There is no bulk import workflow.
+- Email uniqueness is protected by the database constraint, but there is no
+  special application-level race handling beyond the resulting conflict.
+- Email delivery has no retry/dead-letter mechanism; the durable Notification
+  row remains the source of truth.
+
 ### Verification notes
 
 - **Backend tests:** `backend/tests/test_dashboard_reports.py` — 35 tests
