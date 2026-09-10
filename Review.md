@@ -901,3 +901,83 @@ frontend + its origin added to the CORS allow-list (the `# TODO(Module 9)`
 marker in `backend/app/main.py` marks the exact line); Cloudflare DNS;
 backup verification; and a live end-to-end cloud smoke test once real
 credentials exist.
+
+---
+
+## Admin Reports page (decided 2026-09-10)
+
+A **post–Module 7 addition** satisfying the Administrator "Generate Reports"
+flow (`assets/diagrams/data-flow.md` §3). Scope: generate, filter and sort
+reports for the four core entities, from the Admin portal only.
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **One screen with a report-type selector, not four pages/tabs** | The four reports differ only in columns, filters and sort fields — the grid, filter panel, sort panel, CSV export, empty/loading/error states and legend are identical. One component parameterised by type keeps a single implementation (per the task's "do not fork the visual design per report type"), avoids four near-duplicate screens, and lets an administrator compare reports without navigating away. **Switching report type resets any active filter/sort state** so a Category filter set on Lost Items is never silently reinterpreted on Found Items; the reset is instant (no page reload/re-navigation). |
+| 2 | **Reference screenshots drove layout/interaction only** | The screenshot grid, the grouped **Filter / Sort According To / Sorting Order** panel, and the two actions were borrowed as an interaction pattern. The visual skin is the existing officer-derived design system (`src/index.css` `@theme` + `src/components/ui/`): officer card/panel component, `StatusBadge` palette, brand tokens. No screenshot colour, font or chrome was adopted. |
+| 3 | **Backend: the Dashboard module was created, not extended** | The task brief said to extend an existing `GET /dashboard/reports`, but Module 7 had *deferred* it (Review.md §Module 7 decision 7) — the branch had no Dashboard module. This pass therefore created `backend/app/modules/dashboard/` (schemas/service/router) and registered it in `main.py`. Flagged here so the "extend the existing endpoint" wording isn't mistaken for a prior implementation. |
+| 4 | **One parameterised endpoint, not four per-entity routes** | `ABOUT.md` gives the Dashboard module ownership of cross-entity reporting, and the joins (LostItem→Category→User, Claim→both items→claimant/officer) belong server-side. Four routes would duplicate validation and sorting logic for no benefit. |
+| 5 | **`verification_status` added beyond the listed query parameters** | The task's query-parameter list omitted it, but the Claims report's filter table explicitly requires a Verification Status filter. Added as a claims-only parameter rather than dropping a required filter. |
+| 6 | **Integer IDs, not UUIDs** | The task's query sketch shows `category_id=<uuid>` / `user_id=<uuid>` placeholders, but TRACE's data model uses integer identity PKs throughout (`Notes.md` §4). Using integers keeps the API consistent with every other module. |
+| 7 | **Extra detail via click-to-expand rows, not extra columns** | The grid stays exactly to the specified columns; clicking a row reveals every returned field (including the record id, which is hidden for lost/found reports) in a detail panel below the row. This honours "only required information, expandable for more" without widening the table. |
+| 8 | **CSV export is client-side, from the rendered grid** | The screen must let a report "leave the screen in a ready-to-use format". Exporting the already-formatted rows (labels as headers, `YYYY-MM-DD` dates, human enums) means the file matches exactly what the administrator sees; a server-side `format=csv` would have been a second rendering path. |
+| 9 | **Filter pickers reuse the reports endpoint** | There is no `GET /users`, and the task forbids adding routes. The Category picker uses `GET /categories`; the Reported By / Found By / Officer pickers reuse `GET /dashboard/reports?type=users` (with `role=Officer` for the officer list). |
+
+### Report-specific business rules (stated explicitly)
+
+- **Claims report default scope: all claims.** It follows the data-flow's
+  `SELECT * FROM Claim` — `Active`, `Completed` **and** `Cancelled` (including
+  officer-`Rejected` claims, whose `Status` is `Cancelled`) appear by default.
+  Cancelled/rejected claims are not hidden; use the Status filter to narrow to
+  one value. Rationale: an administrator auditing claim outcomes needs the
+  rejected/cancelled rows visible, not omitted by default.
+- **Date-range never dropped:** the Users report filters on `CreatedAt` even
+  though "registration" is not the report's headline concept; that field is the
+  only sensible date on `User`.
+- **Unassigned officer renders as an em dash** (`—`); an uncollected
+  `Collected` cell renders **blank**, per the column spec.
+- **Empty enum filter = no filtering** (`All statuses` etc.), never a filter on
+  the literal empty string.
+- **Claims have no seeded rows** (Module 8's seed creates categories, users,
+  items and matches, but no claims); the Claims report is verified against a
+  real claim row inside a rolled-back transaction plus the backend test suite.
+
+### Known gaps carried forward (on-demand only)
+
+- **On-demand reports only — no scheduled or emailed reports.** Per the V1
+  single-notification-channel constraint in `ABOUT.md`, TRACE emails match /
+  claim events, not report digests. Report generation is an explicit admin
+  action; nothing is pushed. This is a deliberate non-goal, not an oversight.
+- **No pagination / server-side paging.** The grid renders every matching row;
+  fine for the pilot's data volume, but a large dataset would need a limit +
+  paging contract.
+- **Filter pickers list all users**, not only users who have reported items
+  (would need a distinct-user query). Acceptable for the pilot.
+- **No saved/shared report presets** — filters reset on leaving the page and on
+  report-type switch.
+- **`GET /dashboard/summary`, `GET /audit-logs` and `GET /notifications` remain
+  unimplemented** (the Admin summary is still computed client-side; the
+  Notifications/Audit Log views still show explained gap panels). Only
+  `GET /dashboard/reports` landed in this pass.
+
+### Verification notes
+
+- **Backend tests:** `backend/tests/test_dashboard_reports.py` — 35 tests
+  covering all four report types with at least one filter and one sort each,
+  the server-side joins (category name, reporter/claimer/officer names), the
+  `Administrator`-only gate (`401` anonymous, `403` for `User`/`Officer`), and
+  the `400` contract for invalid `type` / `sort_by` / `status` / `role` /
+  `verification_status`. Full backend suite: **177 passed**.
+- **Frontend:** `npm run build` (`tsc -b && vite build`) clean; the existing
+  Vitest suite passes (**106**) plus `reportConfig.test.ts` (**6**) pinning the
+  exact column labels, sort keys and CSV escaping.
+- **Real seeded data** (the running `make demo` stack, updated backend run
+  host-side): Users report (`role=User`, `sort_by=last_name asc`) returned the
+  two seeded Users; Lost Items (`status=Reported`, `sort_by=title asc`) returned
+  the three seeded lost items with `Category`/`Reported By` joined; Found Items
+  (`status=Available`, `sort_by=category asc`) returned the three seeded found
+  items with joins. Claims was verified with a real claim row inserted and
+  rolled back against the seeded items/users (no claims are seeded). Error and
+  auth codes confirmed live: invalid `type` → `400`, invalid `sort_by` → `400`,
+  `User` token → `403`, no token → `401`.

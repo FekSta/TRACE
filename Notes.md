@@ -1618,7 +1618,7 @@ amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
 | Item status | `PATCH /items/{kind}/{id}` | `demo/officer/` Update Item Status |
 | Admin summary | `GET /items/lost`, `/items/found`, `/claims`, `/matches`, `/categories` (computed client-side) | none — officer extension (see §13.5) |
 | Categories | `GET /categories?include_archived=true`, `POST/PATCH/DELETE /categories` | `demo/UI/` Manage Categories (content only) |
-| Admin reports | — (gap: `GET /dashboard/reports` deferred) | `demo/UI/` Reports |
+| Admin reports | `GET /dashboard/reports?type=users|lost_items|found_items|claims` (+ filters/sort; §14) | `demo/UI/` Reports (content + reference-screen layout only) |
 | Audit log | — (gap: no `GET /audit-logs` yet) | none |
 
 > **Demo → real-API mismatches** (each flagged in `Review.md` §Module 7):
@@ -1634,10 +1634,14 @@ amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
   gap panel when it 404s.
 - **No `GET /audit-logs`** — the Admin Audit Log view renders the same kind
   of gap panel.
-- **`GET /dashboard/summary` + `GET /dashboard/reports`** (listed in the
-  Module 7 issue) were **deferred** — the milestone guardrail forbids new
-  backend endpoints this pass; the Admin summary is computed client-side.
-  All three are the Module 8 handoff.
+- **`GET /dashboard/summary`** (listed in the Module 7 issue) is still
+  **deferred** — the Admin summary is computed client-side from the list
+  endpoints.
+- **`GET /dashboard/reports`** was **deferred** in Module 7 but is now
+  **implemented** (post–Module 7 Admin Reports page — see §14). The earlier
+  "Reports" gap panel is gone; the Admin portal's Reports screen is live.
+- **No `GET /users`** — the report filter pickers reuse
+  `GET /dashboard/reports?type=users` rather than adding a users route (§14.6).
 
 ### 13.6 Local dev instructions
 
@@ -1666,7 +1670,200 @@ npm run dev            # http://localhost:5173 (replaces the containerized build
 
 ---
 
-## 14. Module status
+## 14. Dashboard Reporting API (Admin Reports page, post–Module 7)
+
+The Dashboard module (`backend/app/modules/dashboard/`) implements the
+Administrator **"Generate Reports"** flow (`assets/diagrams/data-flow.md` §3):
+`GET /dashboard/reports` returns a filtered, sorted, already-joined table for
+one of the four core entities. It is **one** endpoint parameterised by `type`
+(not four routes) because `ABOUT.md` puts cross-entity reporting in the
+Dashboard module. It is read-only — it joins every module's tables for display
+but never writes — and it reuses `require_role` / `get_db` from Auth exactly as
+every other module does.
+
+> **Note (implementation origin):** Module 7 deferred this endpoint, so it did
+> not exist on the branch. This task **created** the Dashboard module; there was
+> no prior `/dashboard/reports` handler to extend. See `Review.md` Admin Reports.
+
+### 14.1 Endpoint summary
+
+| Method | Path | Auth required | Purpose |
+|---|---|---|---|
+| `GET` | `/dashboard/reports` | Bearer, `Administrator` only | Generate one of four on-demand reports |
+
+- `401` — missing / malformed / expired token (same stack as Notes.md §8).
+- `403` — an active `User` or `Officer` token (Administrator only).
+- `400` — unknown `type`, unknown `sort_by` for that type, or a `status` /
+  `role` / `verification_status` outside that report's enum. Messages are plain
+  language and always name the valid values (never a silent fallback).
+- `422` — malformed query value (e.g. a bad date).
+
+### 14.2 Query parameters
+
+| Parameter | Applies to | Type | Notes |
+|---|---|---|---|
+| `type` | all (required) | `users` \| `lost_items` \| `found_items` \| `claims` | Unknown value → `400` |
+| `date_from` / `date_to` | all | `YYYY-MM-DD` | Inclusive upper bound; applied to the report's own date field (`CreatedAt` for users — never dropped) |
+| `status` | all | report-specific enum | Users: `Active`/`Suspended`/`Inactive`; Lost: `Reported`/`Matched`/`Claimed`/`Closed`; Found: `Available`/`Claimed`/`Returned`; Claims: `Active`/`Completed`/`Cancelled` |
+| `verification_status` | claims | `Pending`/`Approved`/`Rejected` | Added beyond the original query list because the Claims report's filter table requires it |
+| `category_id` | lost_items / found_items | integer | Category PK (TRACE uses integer PKs, not UUIDs) |
+| `role` | users | `User`/`Officer`/`Administrator` | |
+| `user_id` | lost_items / found_items | integer | Reporter / finder PK |
+| `officer_id` | claims | integer | Reviewing officer PK |
+| `sort_by` | all | see §14.3 | Defaults to the report's date field; unknown key → `400` |
+| `sort_order` | all | `asc`/`desc` | Defaults to `desc` |
+
+Response envelope:
+
+```json
+{
+  "report_type": "lost_items",
+  "generated_at": "2026-09-10T16:42:54.123456Z",
+  "count": 3,
+  "rows": [ { "id": 1, "item": "Black Nike backpack", "category": "Bags",
+              "reported_by": "Ada Lovelace", "date_lost": "2026-08-10",
+              "location": "Library", "status": "Reported" } ]
+}
+```
+
+Rows are already joined and human-readable: dates are `YYYY-MM-DD`, enums are
+spelled exactly as in `data-model.md`, and counts always equal `len(rows)`. The
+frontend never stitches entities together.
+
+### 14.3 Per-report columns, filters and sort fields
+
+Column labels below are the exact grid headers. `sort_by` values are the
+machine keys the API accepts (the radio labels live in
+`frontend/src/routes/admin/reportConfig.ts`).
+
+**Users report** — source `User`
+
+| Column | Row key | Filter | Notes |
+|---|---|---|---|
+| First Name | `first_name` | | |
+| Last Name | `last_name` | Date range (`CreatedAt`), Status, Role | |
+| Student/Staff No. | `student_number` | | |
+| Email | `email` | | |
+| Role | `role` | | |
+| Status | `status` | | |
+| Registered | `created_at` | | |
+
+Sort keys: `registered` (Registered Date), `role`, `status`, `last_name`.
+
+**Lost Items report** — source `LostItem` + `Category` + reporting `User`
+
+| Column | Row key |
+|---|---|
+| Item | `item` (`LostItem.Title`) |
+| Category | `category` (`Category.CategoryName`) |
+| Reported By | `reported_by` (`User.FirstName LastName`) |
+| Date Lost | `date_lost` |
+| Location | `location` |
+| Status | `status` |
+
+Filters: Date range (`DateLost`), Status, Category, Reported By (user picker).
+Sort keys: `date_lost`, `status`, `category`, `title` (Item Title).
+
+**Found Items report** — source `FoundItem` + `Category` + reporting `User`
+
+| Column | Row key |
+|---|---|
+| Item | `item` (`FoundItem.Title`) |
+| Category | `category` (`Category.CategoryName`) |
+| Found By | `found_by` (`User.FirstName LastName`) |
+| Date Found | `date_found` |
+| Storage Location | `storage_location` |
+| Status | `status` |
+
+Filters: Date range (`DateFound`), Status, Category, Found By (user picker).
+Sort keys: `date_found`, `status`, `category`, `title` (Item Title).
+
+**Claims report** — source `Claim` + `LostItem` + `FoundItem` + claimant `User`
++ reviewing `User`
+
+| Column | Row key |
+|---|---|
+| Claim ID | `id` |
+| Lost Item | `lost_item` (`LostItem.Title`) |
+| Found Item | `found_item` (`FoundItem.Title`) |
+| Claimant | `claimant` (`User.FirstName LastName`) |
+| Officer | `officer` (`User.FirstName LastName`, null when unassigned) |
+| Claim Date | `claim_date` |
+| Verification | `verification_status` |
+| Status | `status` |
+| Collected | `collected` (blank until collected) |
+
+Filters: Date range (`ClaimDate`), Verification Status, Status, Officer.
+Sort keys: `claim_date`, `verification_status`, `status`, `officer`.
+
+### 14.4 curl examples (one per report type)
+
+```bash
+# Administrator token (Notes.md §5.2)
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"TestPass123!"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# 1. Users — only role=User, newest registrations first
+curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8000/dashboard/reports?type=users&role=User&sort_by=last_name&sort_order=asc'
+
+# 2. Lost items — Reported only, one category, sorted by title
+curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8000/dashboard/reports?type=lost_items&status=Reported&category_id=1&sort_by=title&sort_order=asc'
+
+# 3. Found items — Available, date-ranged, sorted by category
+curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8000/dashboard/reports?type=found_items&status=Available&date_from=2026-08-01&date_to=2026-08-31&sort_by=category&sort_order=asc'
+
+# 4. Claims — Pending verification, newest first
+curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8000/dashboard/reports?type=claims&verification_status=Pending&sort_by=claim_date&sort_order=desc'
+
+# Error contract
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8000/dashboard/reports?type=bogus'          # 400
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:8000/dashboard/reports?type=users&sort_by=date_lost'  # 400
+```
+
+CSV export from the grid is produced client-side (see §14.5).
+
+### 14.5 CSV export format
+
+The Admin Reports page's **Export CSV** button serialises the *currently
+displayed* grid (same filters/sort as shown), not a fresh server call.
+
+- Header row = the exact column labels (e.g. `First Name,Last Name,...`).
+- One row per grid row; values are already `YYYY-MM-DD` and human enum labels,
+  so no reformatting is needed before use.
+- RFC-4180 quoting: values containing a comma, quote or newline are wrapped in
+  double quotes and inner quotes are doubled.
+- `null`/empty cells (e.g. an uncollected claim's `Collected`) export as empty.
+- Row separator `\r\n`; file name `trace-<report>-report-YYYY-MM-DD.csv`.
+
+### 14.6 Frontend page (`frontend/src/routes/admin/Reports.tsx`)
+
+- One screen with a report-type selector; switching type reloads the columns,
+  the type-specific filters and the sort fields **and resets any active
+  filter/sort state** (`Review.md` Admin Reports decision 1).
+- Results grid docked at the top; a "Configure Report" panel below it holds the
+  **Filter**, **Sort According To** and **Sorting Order** groups, mirroring the
+  reference screenshots' grouped-box layout on officer design tokens.
+- Columns are the exact labels from §14.3; each row expands in place to reveal
+  any field not in the default column set (never widening the table).
+- A colour-key legend sits below the grid (mandatory because status cells use
+  colour-coded badges).
+- `Generated: <date/time>` near the title refreshes on every grid reload.
+- States: skeleton rows while loading (panel stays interactive), a plain empty
+  message per report type, and a plain-language error banner above the grid.
+- The pickers reuse the same endpoint — no new routes: `/categories` for
+  Category, `?type=users` for Reported By / Found By, and
+  `?type=users&role=Officer` for the Claims officer picker.
+
+---
+
+## 15. Module status
 
 | Milestone | Status |
 |-----------|--------|
@@ -1680,3 +1877,7 @@ npm run dev            # http://localhost:5173 (replaces the containerized build
 | Module 7 — Frontend & Dashboard | ✅ closed (see `issues/completed.md`) |
 | Module 8 — Local demo kit | **in progress** — root compose ✅, seed + `make demo` ✅ (see `issues/completed.md`); offline smoke test + `Tutorial.md` follow-through is the remaining issue |
 | Module 9 — Cloud migration (optional) | not started |
+
+> **Post–Module 7 additions:** the Admin Reports page (Dashboard module
+> `GET /dashboard/reports`) is implemented — see §14. It satisfies the
+> Administrator "Generate Reports" flow from `assets/diagrams/data-flow.md`.
