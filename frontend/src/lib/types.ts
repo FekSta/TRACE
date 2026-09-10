@@ -93,3 +93,15 @@ export interface AuditLogEntry {
   timestamp: string;
   ip_address: string | null;
 }
+
+/** One row of a Dashboard report — already joined and human-readable by the
+ *  backend; keys differ per report type (see `routes/admin/reportConfig.ts`). */
+export type ReportRow = Record<string, string | number | null>;
+
+/** Response envelope for `GET /dashboard/reports` (Dashboard module). */
+export interface ReportResponse {
+  report_type: "users" | "lost_items" | "found_items" | "claims";
+  generated_at: string;
+  count: number;
+  rows: ReportRow[];
+}
