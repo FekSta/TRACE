@@ -31,7 +31,12 @@ app = FastAPI(
 # frontend will extend this list. Not an API-surface change (no new routes).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        # TODO(Module 9): add hosted frontend origin here (the real Vercel URL
+        # once it exists) — e.g. "https://trace.vercel.app".
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
