@@ -1402,6 +1402,76 @@ Each `Notification` row is queryable alongside the email:
 `SELECT * FROM notifications ORDER BY id;` — one row per trigger, present
 even when the email cannot be delivered.
 
+### 12.6 Phase 2 env wiring (pre-deployment)
+
+This is the **env/config plumbing** that the real Module 9 deployment will plug
+into — NOT the live Render/Vercel deployment itself. It makes local containers
+able to talk to cloud *backing services* (external Postgres/Supabase, Supabase
+Storage, Resend) purely through `.env`, so the config can be validated before
+the real deploy. No Supabase project, Render/Vercel service, or Cloudflare DNS
+record is created or touched by this mechanism.
+
+**The override file is AUTO-LOADED — there is no separate hybrid-mode
+command.** `docker-compose.override.yml` (repo root) is picked up
+automatically by plain `docker compose up` / `make demo` alongside
+`docker-compose.yml`; no `-f` flag is involved. Hybrid mode is therefore
+controlled **entirely by what is set in `.env`**, never by which compose
+command you run. Every override value defaults (via `${VAR:-default}`) to the
+exact Phase-1 behavior, so an unset var is a no-op, and the Phase-1 demo path
+is byte-identical to the Module 8 baseline with the override file present.
+
+**Phase-2 vars** (all optional — the Phase-1 demo boots with none of them set):
+
+| Var | Purpose | Required when |
+|-----|---------|---------------|
+| `DATABASE_URL` | Point the app at an external Postgres (e.g. Supabase) instead of the local `db` container | Phase 2 DB migration (any backend) |
+| `STORAGE_BACKEND=supabase` | Switch file storage to Supabase Storage | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` all set |
+| `SUPABASE_URL` | Supabase project URL (`https://<project-ref>.supabase.co`) | `STORAGE_BACKEND=supabase` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key for Storage admin (server-side only — never ship to the frontend) | `STORAGE_BACKEND=supabase` |
+| `SUPABASE_STORAGE_BUCKET` | Storage bucket name (e.g. `trace-uploads`) | `STORAGE_BACKEND=supabase` |
+| `EMAIL_BACKEND=resend` | Switch email to the Resend API instead of local Mailpit | `RESEND_API_KEY` set |
+| `RESEND_API_KEY` | Resend API key (`re_...`) | `EMAIL_BACKEND=resend` |
+
+`backend/app/config.py` reads these and **fails fast at startup** when a cloud
+backend is selected without its required vars (e.g. `STORAGE_BACKEND=supabase`
+with no `SUPABASE_URL` → `RuntimeError` naming the missing var) — never a
+silent misconfiguration. `STORAGE_BACKEND` and `EMAIL_BACKEND` flip
+**independently**: a hybrid like "Supabase DB + email still on local Mailpit"
+(`STORAGE_BACKEND=supabase`, `EMAIL_BACKEND` left `smtp`) is valid.
+
+**How to get hybrid mode** — edit the repo-root `.env` (gitignored; real
+values only ever live there, never in committed files):
+
+```dotenv
+# 1. Database -> Supabase (compose forwards this to the backend container)
+DATABASE_URL=postgresql+psycopg://postgres:<db-password>@db.<project-ref>.supabase.co:5432/postgres
+
+# 2. Storage -> Supabase (optional, independent of #1 and #3)
+STORAGE_BACKEND=supabase
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+SUPABASE_STORAGE_BUCKET=trace-uploads
+
+# 3. Email -> Resend (optional, independent of #1 and #2)
+EMAIL_BACKEND=resend
+RESEND_API_KEY=re_<api-key>
+```
+
+Then run the **same** `docker compose up --build -d` (or `make demo`) — no
+new command, no flags. With the cloud backends selected, the local `db`
+container is no longer relied upon (the backend's compose dependency is
+relaxed from `service_healthy` to `service_started`, and the entrypoint's own
+migration retry loop covers the Phase-1 warm-up), while the local Mailpit
+container remains available for any `smtp`-selected parts of a hybrid
+configuration.
+
+> **`.env` convention change (Phase 1):** `DATABASE_URL` must stay commented
+> out in a Phase-1 `.env`. Because the override file is always loaded, an
+> active host-side `DATABASE_URL=…@localhost:5432…` would now reach the
+> backend container and point it at itself. Host-side tools (Alembic, seed)
+> are unaffected — they fall back to the identical URL in `config.py`.
+> `.env.example` documents this under its "Phase 2 (optional)" block.
+
 ---
 
 ## 13. Frontend & Dashboard (Module 7)

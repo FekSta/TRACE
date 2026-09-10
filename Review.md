@@ -749,3 +749,155 @@ weakened — `RequireRole` and `require_role` are untouched.
   broken. `Notes.md` §13.3 was corrected in place to document the
   now-authoritative login step (token stored **and** context session
   established).
+
+---
+
+## Phase 2 env wiring — pre-deployment plumbing (2026-09-09)
+
+**Scope:** env/config wiring only, per the "Module 9 env wiring forward plan".
+No Supabase project, Render/Vercel service, Cloudflare DNS record, or
+`SupabaseStorage`/`ResendEmailBackend` adapter code was created — this pass
+builds the plumbing the real Module 9 issues will plug into. This is
+**precursor work, not a closed Module 9 issue**, so `issues/completed.md` was
+deliberately NOT given an entry (nothing in the Module 9 issue list is
+complete; the completed log must not imply deployment progress).
+
+### 1. Naming change: `docker-compose.phase2.yml` (-f) → `docker-compose.override.yml` (auto-loaded)
+
+The original plan invoked a Phase-2 override via an explicit `-f` flag. That
+approach was replaced with `docker-compose.override.yml`, which Docker Compose
+auto-loads next to `docker-compose.yml` for **plain `docker compose up`** —
+no flag. Why this matters: it **removes the opt-in flag entirely**, so hybrid
+mode is now opt-in by `.env` values, not by command. Correctness therefore
+rests entirely on every override value defaulting safely to Phase-1 behavior
+when `.env` is empty — and that default-safety is the part that must not
+regress the demo.
+
+**How default-safety was implemented (the mechanism, exactly):**
+
+- `DATABASE_URL` uses an **explicit re-derived fallback**, not the literal
+  `${DATABASE_URL:-}`. Compose interpolates each file *before* merging, so the
+  literal form would resolve to an empty string — or worse, a stray host-side
+  `.env` value — and clobber the base compose's `POSTGRES_*`-composed URL.
+  The override therefore spells out the composed default
+  (`postgresql+psycopg://${POSTGRES_USER:-trace}:…@db:5432/…`), which renders
+  byte-identical to the base in the no-op case and is replaced only when
+  `DATABASE_URL` is actually set.
+- `STORAGE_BACKEND` / `EMAIL_BACKEND` default to `local` / `smtp` — the exact
+  values the base compose pins — so an unset var is a no-op.
+- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` /
+  `RESEND_API_KEY` default to empty strings, which Phase-1 backends never
+  read.
+- `backend.environment.depends_on.db` is relaxed from `service_healthy` to
+  `service_started` so the backend starts and works **whether or not the local
+  `db` container is up** (Phase 2's `DATABASE_URL` may point outside the
+  stack). Phase 1 is unaffected in practice: the entrypoint's own migration
+  retry loop (`docker-entrypoint.sh`, 10×/3s) already absorbs the db warm-up
+  race. The `db` service itself is **not removed** — it still exists and
+  works for the plain Phase-1 case.
+
+**Verified no-op:** `docker compose config` (no `-f`) with an empty Phase-1
+environment diffs against the base-only render showing **only** the four new
+empty keys; every other backend env value is identical, and the full
+`make demo` regression passed with the override file present (see §5).
+
+### 2. `.env` convention change (required for default-safety)
+
+Because the override is always loaded, an **active** host-side `DATABASE_URL
+=…@localhost:5432…` in a Phase-1 `.env` would now reach the backend container
+and point it at itself. Phase-1 `.env` files must therefore keep
+`DATABASE_URL` commented out; host-side tools (Alembic, seed) fall back to
+the identical URL in `config.py`, so nothing else changes. `.env.example`
+moved `DATABASE_URL` into its "Phase 2 (optional)" block with this warning,
+and the local `.env` was updated to match.
+
+### 3. Why `STORAGE_BACKEND` and `EMAIL_BACKEND` stay independently overridable
+
+The plan's noted trade-off: a hybrid "DB on Supabase, email still local
+Mailpit" must remain a valid configuration, and each backend has its own
+required credential set. Wiring both selectors from their own env var (with
+independent fail-fast validation in `config.py`) keeps every combination
+well-defined instead of coupling storage and email to flip together.
+Verified: `STORAGE_BACKEND=supabase` with `EMAIL_BACKEND` unset renders
+`EMAIL_BACKEND: smtp`.
+
+### 4. `config.py` — conditional fail-fast (the `_require` pattern)
+
+The four Phase-2 vars are added with empty defaults (optional), plus a
+`_require(name, backend=…, selector=…)` helper. Validation runs at import and
+raises a clear `RuntimeError` **only** when the matching backend is selected:
+`STORAGE_BACKEND=supabase` without `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`/
+`SUPABASE_STORAGE_BUCKET`, or `EMAIL_BACKEND=resend` without
+`RESEND_API_KEY`. Both failure cases were triggered and the clear messages
+confirmed; the full-vars case boots; Phase 1 boots with zero new vars set.
+(Note: the project record's description of config.py as "every value
+required" predates the current default-based `_get` loader — this pass added
+the `_require` helper to match that documented pattern for the Phase-2 vars.)
+
+### 5. Verification scope — what was actually proven vs. what needs real credentials
+
+**No real Supabase or Resend credentials exist in this environment.** This
+pass therefore could not run a live cloud round trip (real Supabase
+migration/auth/storage upload, real Resend delivery). Everything below was
+verified locally; the credential-gated items are explicitly flagged as
+**unverified pending real credentials**.
+
+**Verified (no credentials needed):**
+- `docker compose config` (no `-f`, auto-load) in the **empty-.env** case —
+  byte-identical to the Module 8 base except the four new empty keys, and
+  `depends_on` relaxed as designed.
+- `docker compose config` in the **populated-.env** case — external
+  `DATABASE_URL`, `supabase`/`resend` selectors and all cloud vars render and
+  reach the container (confirmed in-container via `docker compose exec
+  backend env` after a plain `docker compose up`, no flags).
+- **Phase-1 regression (the hard check):** `make demo` passed **with
+  `docker-compose.override.yml` present** — health 200, seeded login,
+  2 matches, container env showing compose-network `@db` URL and
+  `local`/`smtp`. A baseline A/B (override temporarily moved aside) proved the
+  pre-existing alembic failure is identical with and without this pass's
+  files — no new failures introduced.
+- Fail-fast validation fires with clear errors (both selectors), and the
+  hybrid render keeps `EMAIL_BACKEND: smtp` when only storage flips.
+- Backend test suite: 142 passed; CI workflow untouched and safe (its env
+  vars match Phase-1 defaults).
+
+**Unverified pending real cloud credentials:** an actual connection to a real
+Supabase Postgres (migration + seed against it), real Supabase Storage
+round-trip, and real Resend delivery. With a placeholder external URL the
+entrypoint demonstrably attempts the *external* host (SQLAlchemy connect
+trace, expected failure on the fake host) — that proves the wiring, not live
+connectivity.
+
+### 6. Pre-existing `develop` blocker unblocked (not a Module 9 deliverable)
+
+`develop` carried **two files with the same Alembic revision**
+(`3226c58aebdc_reconcile_divergent_uuid_schema.py` and the
+`…_drop_.py` duplicate), so `alembic heads` reported 2 heads and the
+entrypoint pre-flight refused to boot — at baseline, before this pass touched
+anything. `main` already contains the fix (commit `9994d07`, deletes the
+duplicate), but it had not reached `develop`. To run the required Phase-1
+regression end-to-end, this pass applied the same one-file deletion to the
+working tree (NOT via `alembic merge` — the revision id is a duplicate, so
+deletion is the correct resolution). `make check-migrations` now passes
+exactly one head. This deletion is an unblock borrowed from `main`; land it
+via the eventual `main`→`develop` merge (which carries `9994d07`) or keep
+the working-tree deletion — either way it is unrelated to the env-wiring
+scope.
+
+### 7. `.gitignore` check & what remains for the real Module 9
+
+**`.gitignore` check:** no `*.override.yml` or `docker-compose.override.yml`
+pattern exists (`.env`, `issues/`, uploads, tool caches only) — the override
+file is **not** gitignored and should be committed: it is part of the
+reproducible Phase-2 config path, not a personal local override. No
+`.gitignore` change was needed.
+
+**Still open for the real Module 9 deployment (unchanged by this pass):**
+Supabase project creation + service-role key + storage bucket; Resend
+account + API key; the `SupabaseStorage` and `ResendEmailBackend` adapter
+implementations (not built — this pass wired only their config); the real
+Render backend service (env = the Phase-2 vars above); the real Vercel
+frontend + its origin added to the CORS allow-list (the `# TODO(Module 9)`
+marker in `backend/app/main.py` marks the exact line); Cloudflare DNS;
+backup verification; and a live end-to-end cloud smoke test once real
+credentials exist.

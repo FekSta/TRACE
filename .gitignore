@@ -7,6 +7,9 @@ venv/
 # Environment
 .env
 
+#Production/actual demo seeding to Supabase
+backend/seed.py.production
+
 # Node
 node_modules/
 dist/

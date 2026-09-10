@@ -1,0 +1,66 @@
+# TRACE — Phase 2 env-wiring override (Module 9 pre-deployment plumbing).
+#
+# ⚠️ AUTO-LOADED, NOT OPT-IN: Compose loads this file automatically next to
+# docker-compose.yml for plain `docker compose up` / `make demo` — no -f flag
+# and no separate "hybrid-mode" command exists. Hybrid mode is controlled
+# ENTIRELY by what is set in the repo-root `.env` (gitignored), never by which
+# compose command you run.
+#
+# Phase-1 safety (the hard requirement): every override value below defaults
+# via ${VAR:-default} to the exact Module 8 Phase-1 behavior, so a fresh
+# checkout with a Phase-1 `.env` renders byte-identical config to the base
+# compose file. The Phase-1 demo path (`make demo` / plain `docker compose up`)
+# must keep working unchanged with this file present.
+#
+#   DATABASE_URL (unset)      -> falls back to the base compose's POSTGRES_*-
+#                                composed URL (host `db`), NOT to the host-side
+#                                `localhost` URL. Because Compose interpolates
+#                                each file before merging, the literal
+#                                `${DATABASE_URL:-}` form would resolve to an
+#                                empty string (or a stray host-side value in
+#                                `.env`) and clobber the base value — the
+#                                fallback is therefore re-derived explicitly.
+#   STORAGE_BACKEND (unset)   -> `local`  (identical to the base pin)
+#   EMAIL_BACKEND (unset)     -> `smtp`   (identical to the base pin)
+#   SUPABASE_* / RESEND_*     -> empty string when unset (no-op in Phase 1)
+#
+# Phase-2 behavior — set these in `.env` (never in this file):
+#   DATABASE_URL=postgresql+psycopg://…          -> app DB moves to an external
+#                                                    Postgres (e.g. Supabase);
+#                                                    the local db container is
+#                                                    no longer relied upon.
+#   STORAGE_BACKEND=supabase                     -> requires SUPABASE_URL,
+#                                                    SUPABASE_SERVICE_ROLE_KEY,
+#                                                    SUPABASE_STORAGE_BUCKET.
+#   EMAIL_BACKEND=resend                         -> requires RESEND_API_KEY.
+# STORAGE_BACKEND and EMAIL_BACKEND flip independently — a hybrid such as
+# "Supabase DB + email still on local Mailpit" remains a valid configuration.
+
+services:
+  backend:
+    environment:
+      # When DATABASE_URL is set in .env (Phase 2) the container uses it; when
+      # unset (Phase 1) this re-derives the base compose's compose-network URL
+      # (host `db`), so the merged result is identical to the Module 8 config.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-trace}:${POSTGRES_PASSWORD:-trace_local_password}@db:5432/${POSTGRES_DB:-trace}}
+      # Phase-1 backends stay the defaults; a Phase-2 value in .env now
+      # reaches the container (the base compose pins these — see its comment).
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-smtp}
+      # Phase-2 cloud-service credentials — sourced from .env, empty in Phase 1.
+      # config.py fails fast at startup when a cloud backend is selected
+      # without its required vars, so these can never silently misconfigure.
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+    # Phase 2: DATABASE_URL may point outside the stack (Supabase), so the
+    # backend must start and work whether or not the LOCAL db container is
+    # healthy. Relaxing the base's `service_healthy` to `service_started` is
+    # safe in Phase 1 too — the backend entrypoint's migration retry loop
+    # (10×/3s, docker-entrypoint.sh) already absorbs the db warm-up race.
+    # The db service itself is NOT removed: it still exists and still works
+    # for the plain Phase-1 case.
+    depends_on:
+      db:
+        condition: service_started
