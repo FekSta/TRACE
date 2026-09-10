@@ -1,13 +1,25 @@
 # TRACE — local demo stack (Phase 1, 100% local; Module 8 demo kit)
 #
 # All four services in one file. `docker compose up --build` (or `make demo`)
-# is the ONLY prerequisite for a clean checkout: no `.env` needed (defaults are
-# inlined below), no host `node_modules`, no host Python venv.
+# is the ONLY prerequisite for a clean checkout: no host `node_modules`, no
+# host Python venv, and no manual `.env` authoring — copy `.env.example` to
+# `.env` once (gitignored) to set credentials/URLs. Every value below also
+# falls back to the same dev defaults via ${VAR:-default} if `.env` is absent.
 #
-# Compose-network addresses:
-#   db        postgres:16-alpine          postgresql://trace:trace_local_password@db:5432/trace
+# Config pattern (Retrofit 2026-09-08 — rationale in Review.md):
+#   - Explicit `environment:` blocks + `${VAR}` interpolation, NOT `env_file:`.
+#     The repo `.env` holds HOST-side values (e.g. DATABASE_URL on
+#     `localhost`) that must never reach a container; composing the container's
+#     DATABASE_URL from the POSTGRES_* vars (host `db`) avoids that bug class
+#     entirely.
+#   - The frontend's VITE_API_URL is a BUILD-TIME value (Vite bakes VITE_* into
+#     the bundle), so it flows .env -> `build.args` -> Dockerfile ARG -> build.
+#     A runtime-only `environment:` entry would silently NOT reach the bundle.
+#
+# Compose-network addresses (credentials from .env / ${VAR:-default}):
+#   db        postgres:16-alpine          postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
 #   backend   FastAPI / uvicorn :8000     DATABASE_URL -> db, SMTP_HOST -> mailpit
-#   frontend  built React bundle (nginx)  VITE_API_URL=http://localhost:8000 baked in at build
+#   frontend  built React bundle (nginx)  VITE_API_URL baked in at build (from .env)
 #   mailpit   axllent/mailpit:v1.30.7     SMTP :1025, web UI :8025
 #
 # Host URLs after startup:
@@ -22,9 +34,6 @@
 #   docker compose up --build     # the same thing without the Makefile niceties
 #   docker compose down -v        # stop and wipe ALL data (fresh-demo reset)
 #   docker compose exec db psql -U trace -d trace    # connect with psql
-#
-# Credentials come from `.env` (gitignored). Defaults are inlined with
-# ${VAR:-default} interpolation so a fresh checkout works with no manual steps.
 
 services:
   db:

@@ -4,7 +4,15 @@
  * that document exactly; the real API wins over any mockup assumption.
  */
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+import { getStoredToken } from "./auth";
+
+// The API base URL is supplied at BUILD time from the environment — never a
+// hardcoded fallback (single source of truth, see Review.md Retrofit
+// 2026-09-08):
+//   - dockerized build: repo-root `.env` VITE_API_URL → docker-compose
+//     `build.args` → Dockerfile ARG/ENV → `vite build`
+//   - host dev (`npm run dev`): frontend/.env (copy frontend/.env.example)
+const API_URL: string = import.meta.env.VITE_API_URL;
 
 export class ApiError extends Error {
   status: number;
@@ -40,7 +48,8 @@ function extractDetail(data: unknown, fallback: string): string {
 
 async function request<T>(path: string, opts: RequestOptions): Promise<T> {
   const headers: Record<string, string> = {};
-  if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+  const token = opts.token ?? getStoredToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.body !== undefined && !opts.isForm) headers["Content-Type"] = "application/json";
 
   let body: BodyInit | undefined;

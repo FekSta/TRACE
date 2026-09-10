@@ -6,10 +6,8 @@
 > This is the hand-written technical reference for the **whole app**, kept in the
 > same style and level of detail as an `api.md`: endpoint tables, request/response
 > examples, error formats, a quick end-to-end test sequence, env var knobs, and
-> testing notes. Since Milestones 0–1 expose no HTTP API yet, this document
-> currently documents what *does* exist: the local database, the ORM models, and
-> the migration/seed workflow. As later milestones add real endpoints, this
-> document grows to look exactly like `api.md` does for auth today.
+> testing notes. It records the current full-stack behavior: the local database,
+> ORM models, FastAPI endpoints, React client, and migration/seed workflow.
 >
 > **Authoritative sources**
 > - `ABOUT.md` — system architecture (binding)
@@ -69,6 +67,48 @@ cloud services. The Module 0 sketch exercise (see `issues/completed.md`) circles
 concrete provider, so the modules have no reason to change when the underlying
 provider does. The same reasoning that makes the seams cheap to swap is what keeps
 the modular monolith extractable into microservices later (per `ABOUT.md`).
+
+### 2.1 Environment variables — canonical reference
+
+> **Applies to every module.** This section supersedes all earlier
+> per-milestone env-var documentation (Module 1's DB setup, Module 3's
+> storage, Module 6's email, Module 7's frontend `.env`). Since the
+> 2026-09-08 retrofit, the repo-root `.env` (gitignored; copy `.env.example`)
+> is the **single source of truth**: every environment-dependent value is read
+> from it, and a repo-wide search for any `.env` value returns matches only in
+> `.env`/`.env.example`, `${VAR}` interpolation, or `ARG` declarations (proof
+> in `Review.md` Retrofit). Earlier sections that showed a hardcoded value are
+> corrected below.
+
+| Variable | Consumed by | Build or runtime | Notes |
+|---|---|---|---|
+| `POSTGRES_DB` | `docker-compose.yml` (`db` service, healthcheck, container URL) | runtime | Database name |
+| `POSTGRES_USER` | `docker-compose.yml` | runtime | Role / owner |
+| `POSTGRES_PASSWORD` | `docker-compose.yml` | runtime | Role password |
+| `DATABASE_URL` | `backend/app/config.py` → Alembic, seed, host uvicorn | runtime | Host-side URL on `localhost`; the compose backend container gets its **own** `db`-host URL composed from the `POSTGRES_*` vars — the `.env` value never reaches the container |
+| `JWT_SECRET` | `docker-compose.yml` → backend container; `backend/app/config.py` | runtime | Secret — never hardcoded or committed |
+| `JWT_EXPIRE_MINUTES` | `docker-compose.yml` → backend container; `backend/app/config.py` | runtime | Access-token lifetime (minutes) |
+| `STORAGE_BACKEND` | `backend/app/config.py` (Module 9 seam — not yet consumed by `storage.py`) | runtime | `local` now; `supabase` in Module 9 |
+| `UPLOAD_DIR` | `backend/app/config.py` → `LocalDiskStorage` | runtime | `.env` value `uploads` resolves to `backend/uploads/` (relative to the backend working dir); the compose container pins `/app/uploads` |
+| `EMAIL_BACKEND` | `backend/app/config.py` → `email_backend` | runtime | `smtp` now; `resend` in Module 9 |
+| `SMTP_HOST` | `backend/app/config.py` → `email_backend` | runtime | `localhost` for a host-side backend; the compose container pins `mailpit` |
+| `SMTP_PORT` | `backend/app/config.py` | runtime | Mailpit SMTP port |
+| `SMTP_FROM` | `backend/app/config.py` | runtime | Envelope From address |
+| `VITE_API_URL` | `docker-compose.yml` `build.args` → `frontend/Dockerfile` `ARG` → `vite build` → `frontend/src/lib/api.ts` | **build-time** | Baked into the static bundle — changing it requires a rebuild, not a runtime `environment:` tweak |
+
+**Fixed application constants (deliberately NOT in `.env`):** `JWT_ALGORITHM`
+(`HS256`), `BCRYPT_ROUNDS` (`12`), `MATCH_THRESHOLD` (`60.00`). These are not
+environment-dependent values — the distinction is documented in `Review.md`
+Retrofit so a future reader doesn't "fix" them back into `.env`.
+
+> **Phase 2 (Module 9) — planned env vars (forward plan, not implemented):**
+> `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`
+> (consumed by `SupabaseStorage` once `STORAGE_BACKEND=supabase`),
+> `RESEND_API_KEY` (consumed by `ResendEmailBackend` once
+> `EMAIL_BACKEND=resend`), and the Phase-2 **values** of `DATABASE_URL`
+> (Supabase Postgres) and `VITE_API_URL` (hosted frontend). The wiring
+> checklist and guardrails are in `Review.md` "Module 9 — env wiring forward
+> plan".
 
 ---
 
@@ -264,8 +304,9 @@ Postgres enum types store the exact `Entities.md` value spellings (case-sensitiv
 Since Module 8 the **whole system** (database + backend + frontend + email)
 comes up with **one command** from a clean checkout. Migrations run
 automatically on backend startup and the demo data is seeded automatically —
-there is no manual `alembic upgrade head`, no `npm install`, no `.env` to
-write.
+there is no manual `alembic upgrade head`, no `npm install`, no manual `.env`
+authoring: copy `.env.example` to `.env` once (the only config step; compose
+falls back to the same dev defaults if it is missing).
 
 ### 5.1 One-command startup
 
@@ -289,7 +330,7 @@ Each service ends up listening on:
 |---------|----------|-------|
 | **frontend** | http://localhost:5173 | built React bundle served by nginx (not a dev server) |
 | **backend API** | http://localhost:8000 | FastAPI — interactive docs at `/docs`, liveness at `/health` |
-| **db** | localhost:5432 | Postgres 16 (`trace`/`trace`/`trace_local_password`) |
+| **db** | localhost:5432 | Postgres 16 — credentials from `.env` (`POSTGRES_*`, §2.1) |
 | **mailpit** | http://localhost:8025 | email inbox; SMTP on localhost:1025 |
 
 ### 5.2 Seeded accounts
@@ -341,6 +382,7 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/matches
 | `make demo` | **Build + start + migrate + seed + wait for `/health`** — the one command. Now explicitly runs `make migrate` then `make seed` as visible steps after the backend is healthy (build → up → migrate → seed → wait). |
 | `make migrate` | Run Alembic migrations against the running backend container (`docker compose exec backend alembic upgrade head`). Idempotent — safe to re-run any time against an already-migrated database. **Both this target and the backend entrypoint exist and are not redundant:** the entrypoint (`docker-entrypoint.sh`) is a safety net for non-`make` usage (plain `docker compose up` self-migrates); `make migrate` gives developers and CI explicit control without restarting the backend. |
 | `make seed` | Re-run the idempotent seed against the running stack (safe any time) |
+| `make check-env` | Validate that `.env` exists and defines **every** variable from `.env.example` — fails listing the missing ones (exit ≠ 0), warns about stale extras (e.g. the removed `JWT_ALGORITHM`). Run after `cp .env.example .env` or after editing `.env`. Complements `make check-migrations`. |
 | `make test-frontend` | Run the existing frontend unit test suite locally — the **same suite** as `.github/workflows/frontend-unit-tests.yml`. Runs `cd frontend && npm ci && npm run test:coverage`. Requires **Node 22** locally (matching CI's `actions/setup-node` with `NODE_VERSION: 22`). To run manually without `make`: `cd frontend && npm ci && npm run test:coverage`. Does **not** add or modify any test files — it is a thin wrapper around the existing Vitest suite. |
 | `make update-requirements` | Regenerate hash-pinned backend locks from `requirements/base.in` and `requirements/dev.in` plus the frontend `package-lock.json`. After running, rebuild the stack and re-run the tests. Requires `pip-tools` in `backend/.venv`. |
 | `make up` / `make down` | Start / stop the stack (data volume preserved) |
@@ -366,16 +408,18 @@ Connecting:
 - **GUI (pgAdmin / TablePlus / DBeaver)** — host `localhost`, port `5432`,
   database `trace`, user `trace`
 
-Env vars used (from `.env`, gitignored; sensible defaults are inlined in
-`docker-compose.yml` via `${VAR:-default}` so a fresh checkout works with no
-`.env`):
+Env vars — single source of truth (§2.1): values come from the repo-root
+`.env` (copy `.env.example`; gitignored). docker-compose.yml reads them via
+`${VAR:-default}` interpolation; the `:-default` fallbacks exist only so a
+fresh checkout can boot before `.env` is copied — they are not a second
+configuration source.
 
-| Var | Default | Used for |
-|-----|---------|----------|
-| `POSTGRES_DB` | `trace` | Database name |
-| `POSTGRES_USER` | `trace` | Role / owner |
-| `POSTGRES_PASSWORD` | `trace_local_password` | Role password |
-| `DATABASE_URL` | `postgresql+psycopg://trace:trace_local_password@localhost:5432/trace` | Host-side tools (Alembic, seed) — host `localhost` here; use `db` when running on the compose network |
+| Var | Used for | Notes |
+|-----|----------|-------|
+| `POSTGRES_DB` | Database name (`db` service + container URL) | |
+| `POSTGRES_USER` | Role / owner (`db` service + container URL) | |
+| `POSTGRES_PASSWORD` | Role password (`db` service + container URL) | |
+| `DATABASE_URL` | Host-side tools (Alembic, seed, host uvicorn) | `localhost` host in `.env`; the compose backend container builds its own `db`-host URL from the `POSTGRES_*` vars — the `.env` value never reaches the container (docker-compose.yml) |
 
 Data lives in the named volume `trace_pgdata`: it survives `docker compose
 restart` and `docker compose down` — only `docker compose down -v` wipes it.
@@ -385,10 +429,11 @@ restart` and `docker compose down` — only `docker compose down -v` wipes it.
 ## 6. Alembic usage
 
 Migrations live in `backend/alembic/` and are generated from the models in
-`backend/app/models/` (via `env.py` → `Base.metadata`). Alembic reads the
-`DATABASE_URL` env var; without it, it falls back to the dev URL in
-`backend/alembic.ini`. Host-side tools run from `backend/` using the venv
-(`backend/.venv`, gitignored).
+`backend/app/models/` (via `env.py` → `Base.metadata`). Alembic reads
+`DATABASE_URL` from the repo-root `.env` through the canonical `app.config`
+loader (loaded automatically at import; fails fast if missing — the Retrofit
+2026-09-08 removed the old `backend/alembic.ini` fallback literal). Host-side
+tools run from `backend/` using the venv (`backend/.venv`, gitignored).
 
 ### 6.0 Dependency management
 
@@ -434,8 +479,7 @@ hash-pinning caveat are in `Review.md` §Module 8.
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install --require-hashes -r requirements/base.txt
-
-export DATABASE_URL='postgresql+psycopg://trace:trace_local_password@localhost:5432/trace'
+# (DATABASE_URL is read automatically from the repo-root .env — no export needed)
 ```
 
 Generate a migration from the models:
@@ -523,7 +567,7 @@ docker compose up -d db
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install --require-hashes -r requirements/base.txt
-export DATABASE_URL='postgresql+psycopg://trace:trace_local_password@localhost:5432/trace'
+# (DATABASE_URL comes from the repo-root .env automatically — no export needed)
 
 # 3. Migrate to head
 .venv/bin/alembic upgrade head
@@ -564,6 +608,8 @@ referenced in this same style.
   | `sub` | string | Standard subject — user id as a string |
   | `UserID` | int | User primary key (DoD-required claim) |
   | `Role` | string | Role at issue time (`User`/`Officer`/`Administrator`) — **informational**; authorization re-checks the live DB role |
+  | `FirstName` | string | First name used by the frontend identity display |
+  | `LastName` | string | Last name used by the frontend identity display |
   | `iat` | int | Issued-at epoch seconds |
   | `exp` | int | Expiry epoch seconds |
 
@@ -1282,14 +1328,15 @@ mirrors Module 3's `StorageBackend` interface/adapter pattern exactly.
   `storage.save(...)` and never touches the filesystem.
 - **Implementation**: `SmtpEmailBackend(host, port, from_address)` using
   `smtplib` (stdlib — no new dependency).
-- **Configuration** (from `.env`, defaults in `config.py`):
+- **Configuration** (from `.env` only — required, no fallback defaults; canonical
+  reference in §2.1):
 
-  | Var | Default | Meaning |
+  | Var | Meaning | Notes |
   |---|---|---|
-  | `EMAIL_BACKEND` | `smtp` | Selects the active implementation (`smtp` now; `resend` in Module 9) |
-  | `SMTP_HOST` | `localhost` | `localhost` for the host-side backend (Phase 1); `mailpit` for the Module 8 container on the compose network |
-  | `SMTP_PORT` | `1025` | Mailpit's SMTP port |
-  | `SMTP_FROM` | `no-reply@trace.local` | Envelope From address |
+  | `EMAIL_BACKEND` | Selects the active implementation | `smtp` now; `resend` in Module 9 |
+  | `SMTP_HOST` | SMTP server hostname | `localhost` for a host-side backend (Mailpit publishes `:1025` on the host); the compose container pins `mailpit` |
+  | `SMTP_PORT` | Mailpit's SMTP port | |
+  | `SMTP_FROM` | Envelope From address | set in `.env` (see `.env.example`) |
 
 - **Zero-external-calls guarantee**: Phase 1 config resolves to loopback only
   (`localhost:1025`) — no external relay is ever contacted. Verified by
@@ -1545,6 +1592,12 @@ amber accents `#d97706`) via the `auth-ink`/`auth-navy`/`auth-amber` tokens.
   the user out. Expired tokens are detected client-side and cleared (no
   refresh tokens in this milestone). Storage-choice trade-off documented in
   `Review.md` §Module 7.
+- **Authenticated requests**: `frontend/src/lib/api.ts` is the shared transport
+  boundary. When a call does not pass an explicit token, it reads the current
+  `trace.access_token` from storage and sends `Authorization: Bearer <token>`.
+  This covers portal mutations as well as the `useAuthedFetch` list calls; the
+  backend remains authoritative and still returns 401/403 for missing or invalid
+  credentials.
 
 ### 13.4 Portal → endpoint map (and demo translation record)
 
@@ -1599,9 +1652,12 @@ npm install
 npm run dev            # http://localhost:5173 (replaces the containerized build)
 ```
 
-- `VITE_API_URL` defaults to `http://localhost:8000` (`.env` is gitignored;
-  `.env.example` is committed). The backend CORS-allows `http://localhost:5173`
-  (middleware added to `backend/app/main.py` in Module 7).
+- `VITE_API_URL` comes from `frontend/.env` (copy `frontend/.env.example`;
+  gitignored) for host dev, and from the repo-root `.env` via docker-compose
+  `build.args` for the dockerized build — there is no hardcoded default
+  anywhere (Retrofit 2026-09-08). The backend CORS-allows
+  `http://localhost:5173` (middleware added to `backend/app/main.py` in
+  Module 7).
 - Test accounts: `ada@example.com` / `SuperSecret1!` (User),
   `bob@example.com` / `SuperSecret1!` (User), `officer@example.com` /
   `TestPass123!` (Officer), `admin@example.com` / `TestPass123!`

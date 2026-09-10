@@ -1,32 +1,34 @@
-"""
-Database engine and session configuration for TRACE.
+"""Shared SQLAlchemy setup for the TRACE modular monolith.
 
-Phase 1: local PostgreSQL via Docker (DATABASE_URL from env).
-Phase 2: swap DATABASE_URL to Supabase — no code changes required.
+All 11 ORM models inherit from :class:`Base` (see ``app/models/``). Importing
+``app.models`` registers every model on ``Base.metadata``, which is what
+Alembic autogenerate reads.
+
+One engine / one session factory shared by all modules — modular monolith,
+single Postgres database (see `ABOUT.md`).
 """
 
-import os
+from collections.abc import Iterator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://trace:trace_local_password@localhost:5432/trace",
-)
+from app.config import DATABASE_URL
 
 
-# Sync engine for Alembic migrations and seed scripts.
-# For async usage in FastAPI, the app layer will use asyncpg with a separate async engine.
-sync_url = DATABASE_URL.replace("+asyncpg", "+psycopg2")
-engine = create_engine(sync_url, echo=False)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+class Base(DeclarativeBase):
+    """Declarative base for every TRACE model."""
 
 
-def get_db():
-    """FastAPI dependency: yield a database session per request."""
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+def get_db() -> Iterator[Session]:
+    """FastAPI dependency yielding a database session (one per request)."""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+

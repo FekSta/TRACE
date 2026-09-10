@@ -16,6 +16,8 @@ export interface JwtPayload {
   UserID: number;
   /** `User` / `Officer` / `Administrator` at issue time */
   Role: string;
+  FirstName?: string;
+  LastName?: string;
   iat: number;
   exp: number;
   [claim: string]: unknown;

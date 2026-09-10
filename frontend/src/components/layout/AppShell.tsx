@@ -22,7 +22,16 @@ interface Props {
 export default function AppShell({ portalTitle, nav, active, onNavigate, children, search }: Props) {
   const { session, logout } = useAuth();
 
-  const initials = session?.payload?.Role?.slice(0, 2).toUpperCase() ?? "TR";
+  const firstName = session?.payload?.FirstName?.trim() ?? "";
+  const lastName = session?.payload?.LastName?.trim() ?? "";
+  const fullName = [firstName, lastName].filter(Boolean).join(" ") || session?.payload?.Role || "Guest";
+  const initials =
+    [firstName, lastName]
+      .filter(Boolean)
+      .map((name) => name[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || session?.payload?.Role?.slice(0, 2).toUpperCase() || "TR";
 
   return (
     <div className="min-h-screen">
@@ -57,8 +66,8 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
               {initials}
             </div>
             <div className="min-w-0">
-              <strong className="block truncate text-[13px] text-ink">{session?.payload?.Role ?? "Guest"}</strong>
-              <span className="block text-[11px] text-muted">Signed in</span>
+              <strong className="block truncate text-[13px] text-ink">{fullName}</strong>
+              <span className="block text-[11px] text-muted">{session?.payload?.Role ?? "Guest"}</span>
             </div>
           </div>
           <div className="mt-3.5 flex gap-1.5">

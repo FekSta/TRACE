@@ -4,8 +4,9 @@
   deliberately avoided — it is unmaintained and incompatible with bcrypt 5.x
   on Python 3.14 (see `Review.md` §Module 2). bcrypt only uses the first 72
   bytes of a password; the request schemas enforce `max_length=72`.
-- **Tokens**: PyJWT, HS256, minimal claims (`sub`, `UserID`, `Role`, `iat`,
-  `exp`) — see `Review.md` §Module 2 for the minimal-vs-rich trade-off.
+- **Tokens**: PyJWT, HS256, identity claims (`sub`, `UserID`, `Role`,
+  `FirstName`, `LastName`, `iat`, `exp`) — see `Review.md` §Module 2 for the
+  client identity display contract.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -53,7 +54,7 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
 
 
 def create_access_token(user: User) -> str:
-    """Sign a JWT for the user. Claims: sub, UserID, Role, iat, exp.
+    """Sign a JWT for the user, including the display identity claims.
 
     `UserID` and `Role` are explicit claims (per Module 2 DoD). `Role` is
     informational for clients (e.g. frontend portal selection); authorization
@@ -64,6 +65,8 @@ def create_access_token(user: User) -> str:
         "sub": str(user.id),
         "UserID": user.id,
         "Role": user.role.value,
+        "FirstName": getattr(user, "first_name", ""),
+        "LastName": getattr(user, "last_name", ""),
         "iat": now,
         "exp": now + timedelta(minutes=config.JWT_EXPIRE_MINUTES),
     }

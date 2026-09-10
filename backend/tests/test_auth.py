@@ -524,7 +524,7 @@ class TestJWTCClaimsStructure:
     def test_claims_have_exact_keys(self, user):
         token = create_access_token(user)
         payload = decode_access_token(token)
-        expected_keys = {"sub", "UserID", "Role", "iat", "exp"}
+        expected_keys = {"sub", "UserID", "Role", "FirstName", "LastName", "iat", "exp"}
         assert set(payload.keys()) == expected_keys
 
     def test_sub_is_string_user_id(self, user):
