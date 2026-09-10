@@ -28,6 +28,33 @@ from app.modules.notifications.email_backend import email_backend
 logger = logging.getLogger(__name__)
 
 
+def notify_account_created(user_id: int, temporary_password: str) -> None:
+    """Persist the account-created notification, then best-effort email it."""
+    db = SessionLocal()
+    try:
+        user = db.get(User, user_id)
+        if user is None:
+            return
+        message = (
+            f"Your TRACE account was created. Login email: {user.email}\n"
+            f"Temporary password: {temporary_password}\n"
+            "Please sign in at the TRACE portal."
+        )
+        _row(
+            db,
+            user=user,
+            notification_type=NotificationType.SYSTEM,
+            title="TRACE account created",
+            message=message,
+        )
+        db.commit()
+        _send_email(user.email, "TRACE: your account was created", message)
+    except Exception:  # pragma: no cover - background task must not crash the app
+        logger.exception("notify_account_created failed for user %s", user_id)
+    finally:
+        db.close()
+
+
 def _send_email(to: str, subject: str, body: str) -> None:
     """Best-effort delivery — failures are logged, never raised (the
     `Notification` row is already committed by the caller)."""
