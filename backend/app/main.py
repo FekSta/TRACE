@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.modules.auth.router import router as auth_router
+from app.modules.auth.admin_router import router as admin_user_router
 from app.modules.claims.router import router as claims_router
 from app.modules.dashboard.router import router as dashboard_router
 from app.modules.items.router import router as items_router
@@ -44,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(admin_user_router)
 app.include_router(items_router)
 app.include_router(matching_router)
 app.include_router(claims_router)
