@@ -94,6 +94,18 @@ export interface AuditLogEntry {
   ip_address: string | null;
 }
 
+export interface ManagedUser {
+  id: number;
+  first_name: string;
+  last_name: string;
+  student_number: string | null;
+  email: string;
+  phone_number: string | null;
+  role: "User" | "Officer" | "Administrator";
+  status: "Active" | "Suspended" | "Inactive";
+  created_at: string;
+}
+
 /** One row of a Dashboard report — already joined and human-readable by the
  *  backend; keys differ per report type (see `routes/admin/reportConfig.ts`). */
 export type ReportRow = Record<string, string | number | null>;
