@@ -1029,3 +1029,130 @@ frontend build verified the Admin list plus modal form path. Remaining risks:
   rolled back against the seeded items/users (no claims are seeded). Error and
   auth codes confirmed live: invalid `type` → `400`, invalid `sort_by` → `400`,
   `User` token → `403`, no token → `401`.
+
+---
+
+## Bugfix — Modal form inputs lose focus after every keystroke (2026-09-11)
+
+**Symptom:** in the Admin **Add/Edit Category**, Admin **Add/Edit Account**, and
+Officer **Approve/Reject Claim** modals, typing registered one character per
+click — after every keystroke the input lost focus and the user had to click
+back into the field.
+
+### Root cause (one sentence)
+
+The shared `Modal`'s open/focus effect listed `onClose` in its dependency
+array, and every call site passes `onClose` as a freshly-created function — so
+each keystroke (form state update → parent re-render → new `onClose` identity)
+re-ran that effect, and its `panelRef.current?.focus()` stole focus from the
+input the user was typing in.
+
+**This was NOT the suspected remount pattern.** The diagnostic step
+(disabled-JS-equivalent instrumentation in jsdom, the same signal React
+DevTools would show) proved the input DOM node was **not** unmounting/remounting:
+node identity (`input === input`) held across keystrokes, i.e. no component was
+being redefined per render anywhere in the three pages. The mount/unmount
+hypothesis from the bug report was tested first and ruled out; the evidence
+located the bug in focus *management*, not component identity.
+
+### Why it hit all three modals at once
+
+**One shared component, not three copies of the same mistake.** All three
+reported modals — plus two more that had not been reported yet
+(`officer/Collections.tsx` "Confirm Collection" and `officer/VerifyReports.tsx`
+"Update status") — render their fields inside the same
+`components/ui/Modal.tsx` and pass an inline `onClose` arrow, so a single fix
+in the shared component cured all five. No per-page changes were needed.
+
+### Diagnosis evidence
+
+- **Node identity check:** typing `"abc"` into the input, the re-queried DOM
+  node was the same object across all keystrokes → no remount per keystroke.
+- **Focus-theft check (pre-fix):** with focus in the input,
+  `document.activeElement` after typing was the **modal panel `<div>`**, and a
+  spy on the panel's `.focus()` recorded **two calls** (open, then a re-run
+  during typing) — the effect was re-running per keystroke via the `onClose`
+  dependency.
+- **Post-fix:** `.focus()` fires exactly **once** (on open);
+  `document.activeElement` stays on the input for every keystroke.
+- **Negative control:** with the one-line dependency change temporarily
+  reverted, automated end-to-end tests against the three real pages failed
+  exactly as reported; with the fix restored they passed — proving the shared
+  component was the sole cause (no page-local factors).
+
+### Fix (in the shared component, once — `frontend/src/components/ui/Modal.tsx`)
+
+Before:
+
+```tsx
+useEffect(() => {
+  if (!open) return;
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+  };
+  document.addEventListener("keydown", onKey);
+  // Move focus into the dialog for keyboard users (basic a11y; a full
+  // focus trap is future work).
+  panelRef.current?.focus();
+  return () => document.removeEventListener("keydown", onKey);
+}, [open, onClose]);
+```
+
+After:
+
+```tsx
+// Focus on open only. Focus management must NOT depend on `onClose`: every
+// call site passes a freshly-created function (inline arrow or a function
+// declared in the page's render body), so a new identity on each parent
+// render — including every keystroke in a form — would re-run this effect
+// and `panelRef.current?.focus()` would steal focus from whichever input
+// the user is typing in.
+useEffect(() => {
+  if (!open) return;
+  panelRef.current?.focus();
+}, [open]);
+
+useEffect(() => {
+  if (!open) return;
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+  };
+  document.addEventListener("keydown", onKey);
+  return () => document.removeEventListener("keydown", onKey);
+}, [open, onClose]);
+```
+
+Escape-to-close behavior is unchanged (the keydown listener still re-registers
+with the latest `onClose`); only focus application was split out. Call sites
+keep passing inline `onClose` functions — that remains a supported usage; the
+contract is now enforced inside `Modal` and pinned by a regression test.
+
+### Regression sweep for the same anti-pattern
+
+- **Component-inside-component definitions:** none found anywhere in
+  `frontend/src` (the only match is a test fixture, hoisted to module scope in
+  `Modal.test.tsx` while fixing it).
+- **Unstable `key` props:** none found — every `key` in the app is a stable id
+  or value (`c.id`, `user.id`, `` `${row.type}-${row.id}` ``, `option.value`,
+  `column.key`, and record field names in the Reports grid). No
+  `Date.now()`/fresh-object/array-literal keys.
+- **Other focus-consequence instances:** the two unreported modals
+  (`Collections.tsx`, `VerifyReports.tsx`) had the same latent bug and are
+  covered by the shared fix.
+
+### Verification
+
+- Permanent regression test added to `components/ui/Modal.test.tsx`: a form
+  input inside `Modal` keeps focus across parent re-renders (asserts same DOM
+  node + `document.activeElement` stays on the input after typing).
+- Full Vitest suite: **113/113 passed**; `tsc -b` clean; oxlint clean.
+- A temporary end-to-end harness ran the three real pages
+  (`Categories`, `Users`, `ReviewClaims`): continuous multi-character typing
+  into **every** field via keystrokes dispatched to the focused element
+  (truncation at the first character would reproduce the reported symptom),
+  per-keystroke focus assertion, DOM node identity assertion, successful
+  submit (request body verified), cancel, and reopen — all passed, then the
+  harness was removed from the tree.
+- No workaround was used: no manual refocus-on-keystroke via refs/effects, no
+  remount-avoidance hacks — the fix is the removal of the erroneous effect
+  dependency.
