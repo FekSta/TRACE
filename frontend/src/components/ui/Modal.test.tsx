@@ -1,7 +1,20 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
+import { useState } from "react";
 import Modal from "./Modal";
+
+/** Mirrors the real call sites: form state in the page component + a new
+ *  inline `onClose` on every render. Defined at module scope — a component
+ *  must never be declared inside another component's body. */
+function FormModal() {
+  const [text, setText] = useState("");
+  return (
+    <Modal open={true} title="Form" onClose={() => {}}>
+      <input aria-label="First name" value={text} onChange={(e) => setText(e.target.value)} />
+    </Modal>
+  );
+}
 
 describe("Modal", () => {
   it("renders nothing when closed", () => {
@@ -69,5 +82,27 @@ describe("Modal", () => {
     const backdrop = screen.getByRole("dialog").parentElement!;
     await user.click(backdrop);
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // Regression (2026-09-11): the open/focus effect used to depend on
+  // `onClose`, which every call site passes as a fresh inline function. Each
+  // keystroke in a form re-rendered the page → new `onClose` identity →
+  // effect re-ran → `panelRef.current?.focus()` stole focus from the input
+  // after every character. Focus must be applied on open only.
+  it("keeps focus in a form input across parent re-renders (focus-loss regression)", async () => {
+    const user = userEvent.setup();
+    render(<FormModal />);
+
+    const input = screen.getByLabelText("First name");
+    await user.click(input);
+    expect(document.activeElement).toBe(input);
+
+    await user.type(input, "abc");
+
+    // Same DOM node — no unmount/remount of the field.
+    expect(screen.getByLabelText("First name")).toBe(input);
+    expect((input as HTMLInputElement).value).toBe("abc");
+    // Focus was not stolen by the modal's focus effect during re-renders.
+    expect(document.activeElement).toBe(input);
   });
 });

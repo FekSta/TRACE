@@ -12,15 +12,26 @@ interface Props {
 export default function Modal({ open, title, onClose, children, footer, wide = false }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Focus on open only. Focus management must NOT depend on `onClose`: every
+  // call site passes a freshly-created function (inline arrow or a function
+  // declared in the page's render body), so a new identity on each parent
+  // render — including every keystroke in a form — would re-run this effect
+  // and `panelRef.current?.focus()` would steal focus from whichever input
+  // the user is typing in. Escape handling keeps `onClose` in its own effect
+  // so it always sees the latest callback without re-applying focus.
+  useEffect(() => {
+    if (!open) return;
+    // Move focus into the dialog for keyboard users (basic a11y; a full
+    // focus trap is future work).
+    panelRef.current?.focus();
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
-    // Move focus into the dialog for keyboard users (basic a11y; a full
-    // focus trap is future work).
-    panelRef.current?.focus();
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 

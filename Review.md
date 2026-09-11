@@ -901,3 +901,258 @@ frontend + its origin added to the CORS allow-list (the `# TODO(Module 9)`
 marker in `backend/app/main.py` marks the exact line); Cloudflare DNS;
 backup verification; and a live end-to-end cloud smoke test once real
 credentials exist.
+
+---
+
+## Admin Reports page (decided 2026-09-10)
+
+A **post–Module 7 addition** satisfying the Administrator "Generate Reports"
+flow (`assets/diagrams/data-flow.md` §3). Scope: generate, filter and sort
+reports for the four core entities, from the Admin portal only.
+
+### Decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **One screen with a report-type selector, not four pages/tabs** | The four reports differ only in columns, filters and sort fields — the grid, filter panel, sort panel, CSV export, empty/loading/error states and legend are identical. One component parameterised by type keeps a single implementation (per the task's "do not fork the visual design per report type"), avoids four near-duplicate screens, and lets an administrator compare reports without navigating away. **Switching report type resets any active filter/sort state** so a Category filter set on Lost Items is never silently reinterpreted on Found Items; the reset is instant (no page reload/re-navigation). |
+| 2 | **Reference screenshots drove layout/interaction only** | The screenshot grid, the grouped **Filter / Sort According To / Sorting Order** panel, and the two actions were borrowed as an interaction pattern. The visual skin is the existing officer-derived design system (`src/index.css` `@theme` + `src/components/ui/`): officer card/panel component, `StatusBadge` palette, brand tokens. No screenshot colour, font or chrome was adopted. |
+| 3 | **Backend: the Dashboard module was created, not extended** | The task brief said to extend an existing `GET /dashboard/reports`, but Module 7 had *deferred* it (Review.md §Module 7 decision 7) — the branch had no Dashboard module. This pass therefore created `backend/app/modules/dashboard/` (schemas/service/router) and registered it in `main.py`. Flagged here so the "extend the existing endpoint" wording isn't mistaken for a prior implementation. |
+| 4 | **One parameterised endpoint, not four per-entity routes** | `ABOUT.md` gives the Dashboard module ownership of cross-entity reporting, and the joins (LostItem→Category→User, Claim→both items→claimant/officer) belong server-side. Four routes would duplicate validation and sorting logic for no benefit. |
+| 5 | **`verification_status` added beyond the listed query parameters** | The task's query-parameter list omitted it, but the Claims report's filter table explicitly requires a Verification Status filter. Added as a claims-only parameter rather than dropping a required filter. |
+| 6 | **Integer IDs, not UUIDs** | The task's query sketch shows `category_id=<uuid>` / `user_id=<uuid>` placeholders, but TRACE's data model uses integer identity PKs throughout (`Notes.md` §4). Using integers keeps the API consistent with every other module. |
+| 7 | **Extra detail via click-to-expand rows, not extra columns** | The grid stays exactly to the specified columns; clicking a row reveals every returned field (including the record id, which is hidden for lost/found reports) in a detail panel below the row. This honours "only required information, expandable for more" without widening the table. |
+| 8 | **CSV export is client-side, from the rendered grid** | The screen must let a report "leave the screen in a ready-to-use format". Exporting the already-formatted rows (labels as headers, `YYYY-MM-DD` dates, human enums) means the file matches exactly what the administrator sees; a server-side `format=csv` would have been a second rendering path. |
+| 9 | **Filter pickers reuse the reports endpoint** | There is no `GET /users`, and the task forbids adding routes. The Category picker uses `GET /categories`; the Reported By / Found By / Officer pickers reuse `GET /dashboard/reports?type=users` (with `role=Officer` for the officer list). |
+
+### Report-specific business rules (stated explicitly)
+
+- **Claims report default scope: all claims.** It follows the data-flow's
+  `SELECT * FROM Claim` — `Active`, `Completed` **and** `Cancelled` (including
+  officer-`Rejected` claims, whose `Status` is `Cancelled`) appear by default.
+  Cancelled/rejected claims are not hidden; use the Status filter to narrow to
+  one value. Rationale: an administrator auditing claim outcomes needs the
+  rejected/cancelled rows visible, not omitted by default.
+- **Date-range never dropped:** the Users report filters on `CreatedAt` even
+  though "registration" is not the report's headline concept; that field is the
+  only sensible date on `User`.
+- **Unassigned officer renders as an em dash** (`—`); an uncollected
+  `Collected` cell renders **blank**, per the column spec.
+- **Empty enum filter = no filtering** (`All statuses` etc.), never a filter on
+  the literal empty string.
+- **Claims have no seeded rows** (Module 8's seed creates categories, users,
+  items and matches, but no claims); the Claims report is verified against a
+  real claim row inside a rolled-back transaction plus the backend test suite.
+
+### Known gaps carried forward (on-demand only)
+
+- **On-demand reports only — no scheduled or emailed reports.** Per the V1
+  single-notification-channel constraint in `ABOUT.md`, TRACE emails match /
+  claim events, not report digests. Report generation is an explicit admin
+  action; nothing is pushed. This is a deliberate non-goal, not an oversight.
+- **No pagination / server-side paging.** The grid renders every matching row;
+  fine for the pilot's data volume, but a large dataset would need a limit +
+  paging contract.
+- **Filter pickers list all users**, not only users who have reported items
+  (would need a distinct-user query). Acceptable for the pilot.
+- **No saved/shared report presets** — filters reset on leaving the page and on
+  report-type switch.
+- **`GET /dashboard/summary`, `GET /audit-logs` and `GET /notifications` remain
+  unimplemented** (the Admin summary is still computed client-side; the
+  Notifications/Audit Log views still show explained gap panels). Only
+  `GET /dashboard/reports` landed in this pass.
+
+## Retrofit — Administrator User Management (2026-09-10)
+
+This was missing because the Administrator "Maintain Users" flow was documented
+in `assets/diagrams/data-flow.md`, but no milestone issue ever implemented it.
+This retrofit closes that specific gap inside Auth, without creating a parallel
+Users module or changing Items, Matching, Claims, or Dashboard reporting.
+
+### Decisions
+
+- `DELETE /admin/users/{id}` is a soft delete: it sets `User.Status=Inactive`
+  and retains the row. This mirrors the Module 3 `Category.Status=Archived`
+  precedent and preserves foreign-key history and auditability. A PUT to
+  `{"status":"Inactive"}` reaches the same final state; the operations differ
+  only in their audit action (`UserUpdated` versus `UserDeleted`).
+- Administrators can create and edit `User` and `Officer` accounts identically;
+  the editable fields are names, student/employee number, email, phone, role,
+  and status. This surface cannot create, edit into, list, or delete an
+  `Administrator` account.
+- `POST /admin/users` currently accepts an optional client-supplied `Password`
+  so grading/demo credentials can be predictable. When omitted, the server
+  generates a temporary password. Both paths use the exact self-registration
+  bcrypt hashing scheme (direct bcrypt, cost 12).
+
+> **TODO after grading: remove the client-supplied `Password` path.** The
+> endpoint must return to always generating the password server-side, matching
+> the original design intent. This is a temporary demo exception, not a settled
+> long-term decision.
+
+- Account creation writes the `Notification` row first and queues the existing
+  `EmailBackend.send(to, subject, body)` call as a `BackgroundTask`. A simulated
+  SMTP failure was verified to leave both the API response and the `System`
+  Notification row unaffected.
+
+### Verification and known gaps
+
+The focused backend tests verified one AuditLog row per create, update, and
+delete/deactivate call, User/Officer 403 gating, Administrator-role rejection,
+inactive-login rejection, and notification persistence after email failure. The
+frontend build verified the Admin list plus modal form path. Remaining risks:
+
+- **The client-supplied password TODO above is the highest-priority gap.**
+- There is no forced-password-change-on-first-login flow.
+- There is no bulk import workflow.
+- Email uniqueness is protected by the database constraint, but there is no
+  special application-level race handling beyond the resulting conflict.
+- Email delivery has no retry/dead-letter mechanism; the durable Notification
+  row remains the source of truth.
+
+### Verification notes
+
+- **Backend tests:** `backend/tests/test_dashboard_reports.py` — 35 tests
+  covering all four report types with at least one filter and one sort each,
+  the server-side joins (category name, reporter/claimer/officer names), the
+  `Administrator`-only gate (`401` anonymous, `403` for `User`/`Officer`), and
+  the `400` contract for invalid `type` / `sort_by` / `status` / `role` /
+  `verification_status`. Full backend suite: **177 passed**.
+- **Frontend:** `npm run build` (`tsc -b && vite build`) clean; the existing
+  Vitest suite passes (**106**) plus `reportConfig.test.ts` (**6**) pinning the
+  exact column labels, sort keys and CSV escaping.
+- **Real seeded data** (the running `make demo` stack, updated backend run
+  host-side): Users report (`role=User`, `sort_by=last_name asc`) returned the
+  two seeded Users; Lost Items (`status=Reported`, `sort_by=title asc`) returned
+  the three seeded lost items with `Category`/`Reported By` joined; Found Items
+  (`status=Available`, `sort_by=category asc`) returned the three seeded found
+  items with joins. Claims was verified with a real claim row inserted and
+  rolled back against the seeded items/users (no claims are seeded). Error and
+  auth codes confirmed live: invalid `type` → `400`, invalid `sort_by` → `400`,
+  `User` token → `403`, no token → `401`.
+
+---
+
+## Bugfix — Modal form inputs lose focus after every keystroke (2026-09-11)
+
+**Symptom:** in the Admin **Add/Edit Category**, Admin **Add/Edit Account**, and
+Officer **Approve/Reject Claim** modals, typing registered one character per
+click — after every keystroke the input lost focus and the user had to click
+back into the field.
+
+### Root cause (one sentence)
+
+The shared `Modal`'s open/focus effect listed `onClose` in its dependency
+array, and every call site passes `onClose` as a freshly-created function — so
+each keystroke (form state update → parent re-render → new `onClose` identity)
+re-ran that effect, and its `panelRef.current?.focus()` stole focus from the
+input the user was typing in.
+
+**This was NOT the suspected remount pattern.** The diagnostic step
+(disabled-JS-equivalent instrumentation in jsdom, the same signal React
+DevTools would show) proved the input DOM node was **not** unmounting/remounting:
+node identity (`input === input`) held across keystrokes, i.e. no component was
+being redefined per render anywhere in the three pages. The mount/unmount
+hypothesis from the bug report was tested first and ruled out; the evidence
+located the bug in focus *management*, not component identity.
+
+### Why it hit all three modals at once
+
+**One shared component, not three copies of the same mistake.** All three
+reported modals — plus two more that had not been reported yet
+(`officer/Collections.tsx` "Confirm Collection" and `officer/VerifyReports.tsx`
+"Update status") — render their fields inside the same
+`components/ui/Modal.tsx` and pass an inline `onClose` arrow, so a single fix
+in the shared component cured all five. No per-page changes were needed.
+
+### Diagnosis evidence
+
+- **Node identity check:** typing `"abc"` into the input, the re-queried DOM
+  node was the same object across all keystrokes → no remount per keystroke.
+- **Focus-theft check (pre-fix):** with focus in the input,
+  `document.activeElement` after typing was the **modal panel `<div>`**, and a
+  spy on the panel's `.focus()` recorded **two calls** (open, then a re-run
+  during typing) — the effect was re-running per keystroke via the `onClose`
+  dependency.
+- **Post-fix:** `.focus()` fires exactly **once** (on open);
+  `document.activeElement` stays on the input for every keystroke.
+- **Negative control:** with the one-line dependency change temporarily
+  reverted, automated end-to-end tests against the three real pages failed
+  exactly as reported; with the fix restored they passed — proving the shared
+  component was the sole cause (no page-local factors).
+
+### Fix (in the shared component, once — `frontend/src/components/ui/Modal.tsx`)
+
+Before:
+
+```tsx
+useEffect(() => {
+  if (!open) return;
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+  };
+  document.addEventListener("keydown", onKey);
+  // Move focus into the dialog for keyboard users (basic a11y; a full
+  // focus trap is future work).
+  panelRef.current?.focus();
+  return () => document.removeEventListener("keydown", onKey);
+}, [open, onClose]);
+```
+
+After:
+
+```tsx
+// Focus on open only. Focus management must NOT depend on `onClose`: every
+// call site passes a freshly-created function (inline arrow or a function
+// declared in the page's render body), so a new identity on each parent
+// render — including every keystroke in a form — would re-run this effect
+// and `panelRef.current?.focus()` would steal focus from whichever input
+// the user is typing in.
+useEffect(() => {
+  if (!open) return;
+  panelRef.current?.focus();
+}, [open]);
+
+useEffect(() => {
+  if (!open) return;
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") onClose();
+  };
+  document.addEventListener("keydown", onKey);
+  return () => document.removeEventListener("keydown", onKey);
+}, [open, onClose]);
+```
+
+Escape-to-close behavior is unchanged (the keydown listener still re-registers
+with the latest `onClose`); only focus application was split out. Call sites
+keep passing inline `onClose` functions — that remains a supported usage; the
+contract is now enforced inside `Modal` and pinned by a regression test.
+
+### Regression sweep for the same anti-pattern
+
+- **Component-inside-component definitions:** none found anywhere in
+  `frontend/src` (the only match is a test fixture, hoisted to module scope in
+  `Modal.test.tsx` while fixing it).
+- **Unstable `key` props:** none found — every `key` in the app is a stable id
+  or value (`c.id`, `user.id`, `` `${row.type}-${row.id}` ``, `option.value`,
+  `column.key`, and record field names in the Reports grid). No
+  `Date.now()`/fresh-object/array-literal keys.
+- **Other focus-consequence instances:** the two unreported modals
+  (`Collections.tsx`, `VerifyReports.tsx`) had the same latent bug and are
+  covered by the shared fix.
+
+### Verification
+
+- Permanent regression test added to `components/ui/Modal.test.tsx`: a form
+  input inside `Modal` keeps focus across parent re-renders (asserts same DOM
+  node + `document.activeElement` stays on the input after typing).
+- Full Vitest suite: **113/113 passed**; `tsc -b` clean; oxlint clean.
+- A temporary end-to-end harness ran the three real pages
+  (`Categories`, `Users`, `ReviewClaims`): continuous multi-character typing
+  into **every** field via keystrokes dispatched to the focused element
+  (truncation at the first character would reproduce the reported symptom),
+  per-keystroke focus assertion, DOM node identity assertion, successful
+  submit (request body verified), cancel, and reopen — all passed, then the
+  harness was removed from the tree.
+- No workaround was used: no manual refocus-on-keystroke via refs/effects, no
+  remount-avoidance hacks — the fix is the removal of the erroneous effect
+  dependency.
