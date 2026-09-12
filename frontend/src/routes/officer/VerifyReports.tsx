@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import { useToast } from "../../components/ui/Toast";
 import { api, ApiError } from "../../lib/api";
@@ -8,7 +8,9 @@ import StatusBadge from "../../components/ui/StatusBadge";
 import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
 import Loading from "../../components/ui/Loading";
+import FilterTabs from "../../components/ui/FilterTabs";
 import { Field, Select } from "../../components/ui/Field";
+import { countByTab, filterRows } from "../../lib/filterRows";
 import type { LostItem, FoundItem } from "../../lib/types";
 
 const LOST_STATUSES = ["Reported", "Matched", "Claimed", "Closed"];
@@ -18,6 +20,12 @@ type LostRow = LostItem & { kind: "lost" };
 type FoundRow = FoundItem & { kind: "found" };
 type AnyItem = LostRow | FoundRow;
 
+const TABS = [
+  { id: "all", label: "All" },
+  { id: "lost", label: "Lost" },
+  { id: "found", label: "Found" },
+];
+
 function asRows(lost: LostItem[], found: FoundItem[]): AnyItem[] {
   return [
     ...lost.map((i) => ({ ...i, kind: "lost" as const })),
@@ -25,22 +33,61 @@ function asRows(lost: LostItem[], found: FoundItem[]): AnyItem[] {
   ].sort((a, b) => b.id - a.id);
 }
 
-/** Review reports — demo/officer renderVerify(), mapped onto the real API.
- *  NOTE: the model has no per-report "verified" state; the officer action
- *  is updating the item status (PATCH) or removing the report (DELETE).
- *  The mapping is documented in Review.md §Module 7. */
-export default function VerifyReports() {
+function locationOf(item: AnyItem): string | null {
+  return item.kind === "lost" ? item.location_lost : item.storage_location;
+}
+
+function dateOf(item: AnyItem): string | null {
+  return item.kind === "lost" ? item.date_lost : item.date_found;
+}
+
+/**
+ * Review reports — `design/Officer/Officer-Verify-Reports.jpeg`.
+ *
+ * Tabs are All / Lost / Found, over the two list endpoints this screen already
+ * calls. The model has no per-report "verified" state, so the officer actions
+ * stay exactly what they were (Review.md §Module 7): **Verify Report** opens
+ * the status modal (`PATCH /items/{kind}/{id}`) and **Reject** is the existing
+ * destructive confirm (`DELETE /items/{kind}/{id}`).
+ *
+ * The mockup's amber "Possible Duplicate" pill is deliberately not rendered —
+ * there is no duplicate signal in the API payload to drive it honestly.
+ */
+export default function VerifyReports({ query = "" }: { query?: string }) {
   const { show } = useToast();
   const lost = useAuthedFetch<LostItem[]>("/items/lost");
   const found = useAuthedFetch<FoundItem[]>("/items/found");
 
+  const [tab, setTab] = useState("all");
   const [selected, setSelected] = useState<AnyItem | null>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  useEffect(() => {
+    setExpanded(null);
+  }, [query, tab]);
 
   if (lost.loading || found.loading) return <Loading label="Loading reports…" />;
 
-  const rows = asRows(lost.data ?? [], found.data ?? []);
+  const allRows = asRows(lost.data ?? [], found.data ?? []);
+  const counts = countByTab(allRows, (row) => row.kind);
+  const tabs = TABS.map((t) => ({
+    ...t,
+    count: t.id === "all" ? allRows.length : counts[t.id] ?? 0,
+  }));
+
+  const tabbed = tab === "all" ? allRows : allRows.filter((row) => row.kind === tab);
+  const rows = filterRows(tabbed, query, (row) => [
+    row.id,
+    row.title,
+    row.description,
+    row.brand,
+    row.colour,
+    row.status,
+    locationOf(row),
+    row.kind,
+  ]);
 
   function open(item: AnyItem) {
     setSelected(item);
@@ -63,8 +110,8 @@ export default function VerifyReports() {
     }
   }
 
-  async function remove(item: AnyItem) {
-    if (!window.confirm(`Delete report #${item.id}? This cannot be undone.`)) return;
+  async function reject(item: AnyItem) {
+    if (!window.confirm(`Reject and delete report #${item.id}? This cannot be undone.`)) return;
     try {
       await api.delete(`/items/${item.kind}/${item.id}`);
       show(`Report #${item.id} removed.`);
@@ -79,59 +126,86 @@ export default function VerifyReports() {
     <div className="space-y-4">
       <div>
         <h1 className="font-display text-h1 text-ink">Verify Reports</h1>
-        <p className="mt-1.5 text-body text-muted">Review new lost and found reports before they enter the workflow.</p>
+        <p className="mt-1.5 text-body text-muted">
+          Review new lost and found reports before they enter the workflow.
+        </p>
       </div>
+
+      <FilterTabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Filter reports by type" />
 
       {rows.length === 0 ? (
         <Card>
-          <EmptyState message="No reports to review." />
+          <EmptyState
+            message={query.trim() ? `No reports match “${query.trim()}”.` : "No reports to review."}
+            hint={query.trim() ? "Clear the search or switch back to All." : undefined}
+          />
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {rows.map((r) => (
-            <Card key={`${r.kind}-${r.id}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-display text-h3 text-ink">{r.title}</h3>
-                  <p className="mt-1 text-small text-muted">
-                    {r.kind === "lost" ? "Lost" : "Found"} report · #{r.id} · category #{r.category_id}
-                  </p>
+          {rows.map((row) => {
+            const isOpen = expanded === row.id;
+            return (
+              <Card key={`${row.kind}-${row.id}`} className="flex flex-col">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="grid h-[52px] w-[52px] shrink-0 place-items-center rounded-input bg-soft text-muted">
+                    <span className="material-symbols-outlined" aria-hidden="true">
+                      inventory_2
+                    </span>
+                  </div>
+                  <StatusBadge status={row.kind === "lost" ? "Lost" : "Found"} />
                 </div>
-                <StatusBadge status={r.status} />
-              </div>
 
-              <p className="mt-3.5 line-clamp-3 text-body leading-relaxed text-muted">
-                {r.description || "No description provided."}
-              </p>
+                <h3 className="mt-3.5 font-display text-h3 text-ink">{row.title}</h3>
+                <p className="mt-0.5 text-small text-muted">
+                  Category #{row.category_id} · {row.kind === "lost" ? "Lost" : "Found"} report #{row.id}
+                </p>
 
-              <div className="mt-3 flex flex-wrap gap-2 text-small text-muted">
-                {r.kind === "lost" ? (
-                  <>
-                    {r.brand && <span className="rounded-sm bg-soft px-2 py-1">Brand: {r.brand}</span>}
-                    {r.colour && <span className="rounded-sm bg-soft px-2 py-1">Colour: {r.colour}</span>}
-                    {r.location_lost && <span className="rounded-sm bg-soft px-2 py-1">📍 {r.location_lost}</span>}
-                    {r.date_lost && <span className="rounded-sm bg-soft px-2 py-1">Lost: {r.date_lost}</span>}
-                  </>
-                ) : (
-                  <>
-                    {r.brand && <span className="rounded-sm bg-soft px-2 py-1">Brand: {r.brand}</span>}
-                    {r.colour && <span className="rounded-sm bg-soft px-2 py-1">Colour: {r.colour}</span>}
-                    {r.storage_location && <span className="rounded-sm bg-soft px-2 py-1">📍 {r.storage_location}</span>}
-                    {r.date_found && <span className="rounded-sm bg-soft px-2 py-1">Found: {r.date_found}</span>}
-                  </>
+                <p className={`mt-3 text-body leading-relaxed text-muted ${isOpen ? "" : "line-clamp-2"}`}>
+                  {row.description || "No description provided."}
+                </p>
+                {(row.description?.length ?? 0) > 90 && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isOpen ? null : row.id)}
+                    className="mt-1 self-start text-small font-semibold text-amber hover:underline"
+                  >
+                    {isOpen ? "Read less" : "Read more"}
+                  </button>
                 )}
-              </div>
 
-              <div className="mt-4 flex gap-2.5 border-t border-line pt-4">
-                <Button variant="primary" className="flex-1" onClick={() => open(r)}>
-                  Update Status
-                </Button>
-                <Button variant="danger" onClick={() => remove(r)}>
-                  Remove
-                </Button>
-              </div>
-            </Card>
-          ))}
+                <div className="mt-3 flex flex-wrap gap-2 text-small text-muted">
+                  {row.brand && <span className="rounded-sm bg-soft px-2 py-1">Brand: {row.brand}</span>}
+                  {row.colour && <span className="rounded-sm bg-soft px-2 py-1">Colour: {row.colour}</span>}
+                  {locationOf(row) && (
+                    <span className="inline-flex items-center gap-1 rounded-sm bg-soft px-2 py-1">
+                      <span className="material-symbols-outlined text-[15px]" aria-hidden="true">
+                        location_on
+                      </span>
+                      {locationOf(row)}
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-3 text-small text-muted">
+                  By User #{row.user_id}
+                  {" · "}
+                  {dateOf(row) ? `Reported ${dateOf(row)}` : "Date not recorded"}
+                </p>
+
+                <div className="mt-4 flex gap-2.5 border-t border-line pt-4">
+                  <Button variant="primary" className="flex-1" onClick={() => open(row)}>
+                    Verify Report
+                  </Button>
+                  <Button variant="outline" onClick={() => reject(row)}>
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                      expand_more
+                    </span>
+                    Reject
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
