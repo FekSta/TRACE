@@ -25,8 +25,8 @@ export default function AuditLog() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Audit Log</h1>
-        <p className="mt-1.5 text-sm text-muted">Every mutating action across the platform, as recorded by the AuditLog entity.</p>
+        <h1 className="font-display text-h1 text-ink">Audit Log</h1>
+        <p className="mt-1.5 text-body text-muted">Every mutating action across the platform, as recorded by the AuditLog entity.</p>
       </div>
 
       {audit.errorStatus !== null && !gap ? (
@@ -58,7 +58,7 @@ export default function AuditLog() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+                <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-3">Action</th>
                   <th className="px-4 py-3">Entity</th>
                   <th className="px-4 py-3">Actor</th>
@@ -66,9 +66,9 @@ export default function AuditLog() {
                   <th className="px-4 py-3">IP</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line text-xs">
+              <tbody className="divide-y divide-line text-small">
                 {entries.map((e) => (
-                  <tr key={e.id} className="transition-colors hover:bg-[#fafdfb]">
+                  <tr key={e.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">{e.action}</td>
                     <td className="px-4 py-3.5">
                       {e.entity_name} #{e.entity_id ?? "—"}

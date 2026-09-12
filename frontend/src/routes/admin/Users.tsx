@@ -116,8 +116,8 @@ export default function Users() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Manage Users</h1>
-          <p className="mt-1.5 text-sm text-muted">Create and maintain User and Officer accounts.</p>
+          <h1 className="font-display text-h1 text-ink">Manage Users</h1>
+          <p className="mt-1.5 text-body text-muted">Create and maintain User and Officer accounts.</p>
         </div>
         <Button variant="primary" onClick={openCreate}>
           <span className="material-symbols-outlined text-[18px]">person_add</span>
@@ -134,7 +134,7 @@ export default function Users() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+                <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Role</th>
@@ -142,9 +142,9 @@ export default function Users() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line text-xs">
+              <tbody className="divide-y divide-line text-small">
                 {list.map((user) => (
-                  <tr key={user.id} className="transition-colors hover:bg-[#fafdfb]">
+                  <tr key={user.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">{user.first_name} {user.last_name}</td>
                     <td className="px-4 py-3.5 text-muted">{user.email}</td>
                     <td className="px-4 py-3.5 text-ink">{user.role}</td>

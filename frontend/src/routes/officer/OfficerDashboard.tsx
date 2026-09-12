@@ -44,30 +44,30 @@ export default function OfficerDashboard() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Officer Dashboard</h1>
-        <p className="mt-1.5 text-sm text-muted">Monitor verification, claims, and recovery activity.</p>
+        <h1 className="font-display text-h1 text-ink">Officer Dashboard</h1>
+        <p className="mt-1.5 text-body text-muted">Monitor verification, claims, and recovery activity.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <section className="rounded-[12px] border border-line bg-surface p-5 shadow-card lg:col-span-2">
+        <section className="rounded-card border border-line bg-surface p-5 shadow-card lg:col-span-2">
           <div className="mb-3 flex items-center justify-between border-b border-line pb-3">
-            <h3 className="text-[13px] font-semibold uppercase tracking-[0.06em]">Verification Queue</h3>
-            <span className="text-[11px] text-muted">{pendingVerifications} pending</span>
+            <h3 className="text-small font-semibold uppercase tracking-[0.06em]">Verification Queue</h3>
+            <span className="text-small text-muted">{pendingVerifications} pending</span>
           </div>
           {queue.length === 0 ? (
             <EmptyState message="The verification queue is empty." />
           ) : (
             <div className="space-y-2">
               {queue.map((row) => (
-                <div key={`${row.kind}-${row.id}`} className="flex items-center gap-3.5 rounded-lg border border-line p-3">
-                  <div className="grid h-[58px] w-[58px] shrink-0 place-items-center rounded-lg bg-soft text-muted">
+                <div key={`${row.kind}-${row.id}`} className="flex items-center gap-3.5 rounded-input border border-line p-3">
+                  <div className="grid h-[58px] w-[58px] shrink-0 place-items-center rounded-input bg-soft text-muted">
                     <span className="material-symbols-outlined">inventory_2</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <strong className="block truncate text-sm text-ink">
+                    <strong className="block truncate text-body text-ink">
                       {row.title} <StatusBadge status={row.kind === "lost" ? "Lost" : "Found"} />
                     </strong>
-                    <p className="mt-0.5 text-xs text-muted">
+                    <p className="mt-0.5 text-small text-muted">
                       Report #{row.id} · category #{row.categoryId}
                     </p>
                   </div>
@@ -90,7 +90,7 @@ export default function OfficerDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+                <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-3">Claim</th>
                   <th className="px-4 py-3">Item pairing</th>
                   <th className="px-4 py-3">Verification</th>
@@ -98,9 +98,9 @@ export default function OfficerDashboard() {
                   <th className="px-4 py-3">Claim date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line text-xs">
+              <tbody className="divide-y divide-line text-small">
                 {allClaims.map((c) => (
-                  <tr key={c.id} className="transition-colors hover:bg-[#fafdfb]">
+                  <tr key={c.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">#{c.id}</td>
                     <td className="px-4 py-3.5">
                       Lost #<strong>{c.lost_item_id}</strong> ↔ Found #<strong>{c.found_item_id}</strong>

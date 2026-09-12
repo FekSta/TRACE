@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth-context";
 import { ToastProvider } from "./components/ui/Toast";
@@ -10,6 +11,17 @@ import LoginSuccess from "./routes/auth/LoginSuccess";
 import UserPortal from "./routes/user/UserPortal";
 import OfficerPortal from "./routes/officer/OfficerPortal";
 import AdminPortal from "./routes/admin/AdminPortal";
+
+/**
+ * Dev-only design system reference (/design). `import.meta.env.DEV` is
+ * statically replaced with `false` in a production build, so the dynamic
+ * import — and the chunk it points at — is eliminated from the bundle: the
+ * route does not exist in production. It is linked from nowhere (direct URL
+ * only) and needs no session.
+ */
+const DesignSystem = import.meta.env.DEV
+  ? lazy(() => import("./routes/design/DesignSystem"))
+  : null;
 
 /** "/" and unknown paths resolve to the session's own portal (or /login). */
 function RootRedirect() {
@@ -56,6 +68,18 @@ export default function App() {
                 </RequireRole>
               }
             />
+
+            {/* Dev-only design system reference — absent from production */}
+            {DesignSystem && (
+              <Route
+                path="/design"
+                element={
+                  <Suspense fallback={null}>
+                    <DesignSystem />
+                  </Suspense>
+                }
+              />
+            )}
 
             <Route path="/" element={<RootRedirect />} />
             <Route path="*" element={<RootRedirect />} />

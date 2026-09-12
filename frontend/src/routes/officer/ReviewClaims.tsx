@@ -50,8 +50,8 @@ export default function ReviewClaims() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Review Claims</h1>
-        <p className="mt-1.5 text-sm text-muted">Evaluate ownership evidence and approve or reject pending claims.</p>
+        <h1 className="font-display text-h1 text-ink">Review Claims</h1>
+        <p className="mt-1.5 text-body text-muted">Evaluate ownership evidence and approve or reject pending claims.</p>
       </div>
 
       {list.length === 0 ? (
@@ -64,22 +64,22 @@ export default function ReviewClaims() {
             <Card key={c.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-display text-[19px] font-semibold text-ink">Claim #{c.id}</h3>
-                  <p className="mt-1 text-xs text-muted">
+                  <h3 className="font-display text-h3 text-ink">Claim #{c.id}</h3>
+                  <p className="mt-1 text-small text-muted">
                     Claimant user #{c.user_id} · submitted {new Date(c.claim_date).toLocaleDateString()}
                   </p>
                 </div>
                 <StatusBadge status={c.verification_status} />
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-3.5 rounded-lg border border-line bg-soft p-3.5 sm:grid-cols-2">
+              <div className="mt-4 grid grid-cols-1 gap-3.5 rounded-input border border-line bg-soft p-3.5 sm:grid-cols-2">
                 <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">Lost item</span>
-                  <div className="mt-1 text-[13px] font-semibold text-ink">Lost #{c.lost_item_id}</div>
+                  <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">Lost item</span>
+                  <div className="mt-1 text-body font-semibold text-ink">Lost #{c.lost_item_id}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">Found item</span>
-                  <div className="mt-1 text-[13px] font-semibold text-ink">Found #{c.found_item_id}</div>
+                  <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">Found item</span>
+                  <div className="mt-1 text-body font-semibold text-ink">Found #{c.found_item_id}</div>
                 </div>
               </div>
 
@@ -128,7 +128,7 @@ export default function ReviewClaims() {
               <TextArea placeholder={result === "Approved" ? "ID matched student record…" : "Reason for rejection…"} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </Field>
             {result === "Approved" && (
-              <p className="rounded-lg border border-brand/20 bg-brand-light px-3 py-2.5 text-xs text-brand-dark">
+              <p className="rounded-input border border-success/30 bg-success/10 px-3 py-2.5 text-small text-success-ink">
                 Approving atomically sets the claim to Approved and reserves the items (Lost → Claimed, Found → Claimed).
                 The claimant is also emailed (Module 6).
               </p>

@@ -47,14 +47,18 @@ export default function Modal({ open, title, onClose, children, footer, wide = f
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[88vh] overflow-y-auto rounded-xl border border-line bg-surface shadow-[0_8px_30px_rgba(0,0,0,0.18)] outline-none`}
+        className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[88vh] overflow-y-auto rounded-card border border-line bg-surface shadow-hover outline-none`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
-          <h3 className="font-display text-base font-bold text-ink">{title}</h3>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-soft hover:text-ink" aria-label="Close">
+          <h3 className="font-display text-h3 text-ink">{title}</h3>
+          <button
+            onClick={onClose}
+            className="grid h-9 w-9 place-items-center rounded-input text-muted hover:bg-soft hover:text-ink"
+            aria-label="Close"
+          >
             <span className="material-symbols-outlined">close</span>
           </button>
         </div>

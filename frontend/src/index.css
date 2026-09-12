@@ -1,45 +1,72 @@
 @import "tailwindcss";
 
 /* ============================================================
-   TRACE design tokens — extracted from demo/officer/style.css
-   (the single shared design system across User / Officer /
-   Admin portals; see Notes.md §13 "Design system reference").
+   TRACE Design System v1.0
+   Source of truth: design/DESIGN.md + design/TRACE-Design-System.png
+
+   This SUPERSEDES the officer-mockup green identity that
+   previously lived here (see Review.md, design system retrofit).
+   Colour, radius and elevation come only from this block — no
+   component or route in src/ defines a colour literal.
    ============================================================ */
 @theme {
-  /* Typography — Inter (body) + Manrope (display), as in the demo */
+  /* Typography — Manrope (headings) + Inter (body) */
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-display: "Manrope", "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  /* Brand palette (officer --green) */
-  --color-brand: #008542;
-  --color-brand-dark: #006d35;
-  --color-brand-light: #e8f5ed;
+  /* 01 — Colour: primary */
+  --color-ink: #111827; /* primary text, dark buttons, active nav */
+  --color-amber: #d97706; /* links, matched, focus accents */
 
-  /* Surfaces */
-  --color-canvas: #f6f8fb; /* officer --bg */
-  --color-surface: #ffffff;
-  --color-soft: #f1f5f9; /* officer --surface-soft */
+  /* 01 — Colour: neutrals */
+  --color-muted: #6b7280; /* supporting text, captions, metadata */
+  --color-line: #d1d5db; /* borders */
+  --color-canvas: #f8fafc; /* page background */
+  --color-surface: #ffffff; /* cards, inputs, panels, nav */
+  --color-soft: #f1f5f9; /* derived neutral: hover fills, zebra */
 
-  /* Text & lines */
-  --color-ink: #0b1c30; /* officer --text */
-  --color-muted: #667085;
-  --color-line: #dbe1e7; /* officer --border */
+  /* 01 — Colour: status */
+  --color-success: #22c55e; /* approved / returned */
+  --color-success-ink: #15803d; /* derived: success text that stays legible on a soft surface */
+  --color-danger: #dc2626; /* rejected / destructive */
+  --color-warning: #a67c00; /* pending text */
+  --color-warning-soft: #fff8e1; /* pending surface */
+  --color-info: #1d4ed8; /* claimed text (derived — see Review.md) */
+  --color-info-soft: #eff6ff; /* claimed surface (derived) */
+  --color-navy: #0b1c30; /* alternate administrative theme */
+  --color-navy-soft: #f8f9ff;
+  --color-nav-hover: #dce9ff; /* 13 — sidebar hover */
 
-  /* Semantics */
-  --color-danger: #ba1a1a;
-  --color-warning: #d97706;
+  /* 12 — Auth layout pattern (the only auth-specific token) */
+  --color-auth-panel: #0f172a;
 
-  /* Shape & elevation */
-  --radius-card: 12px;
-  --shadow-card: 0 2px 10px rgba(15, 23, 42, 0.05);
-}
+  /* 05 — Radius */
+  --radius-sm: 8px;
+  --radius-input: 10px;
+  --radius-md: 12px;
+  --radius-card: 14px;
+  --radius-auth: 20px;
 
-/* Auth screens keep the demo/auth visual identity — dark navy image
-   side, near-black primary button, amber accents (scoped to auth) */
-@theme {
-  --color-auth-ink: #111827;
-  --color-auth-navy: #0f172a;
-  --color-auth-amber: #d97706;
+  /* 05 — Shadows */
+  --shadow-card: 0 8px 30px rgba(0, 0, 0, 0.08);
+  --shadow-hover: 0 16px 40px rgba(0, 0, 0, 0.12);
+
+  /* 03 — Type scale */
+  --text-h1: 32px;
+  --text-h1--line-height: 40px;
+  --text-h1--font-weight: 700;
+  --text-h2: 24px;
+  --text-h2--line-height: 32px;
+  --text-h2--font-weight: 700;
+  --text-h3: 18px;
+  --text-h3--line-height: 26px;
+  --text-h3--font-weight: 600;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-small: 12px;
+  --text-small--line-height: 16px;
 }
 
 html,
@@ -62,7 +89,13 @@ h4 {
   font-family: var(--font-display);
 }
 
-/* Material Symbols (demo icon font) */
+/* Focus ring — visibility is not optional (Accessibility Baseline 2) */
+:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
+/* Material Symbols (24×24 grid, outline style) */
 .material-symbols-outlined {
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
   line-height: 1;
@@ -70,15 +103,15 @@ h4 {
   user-select: none;
 }
 
-/* Thin, muted scrollbar to match the demo look */
+/* Thin, muted scrollbar */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 50px;
+  background: var(--color-line);
+  border-radius: var(--radius-full, 9999px);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-muted);
 }

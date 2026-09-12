@@ -37,8 +37,8 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Admin Dashboard</h1>
-        <p className="mt-1.5 text-sm text-muted">
+        <h1 className="font-display text-h1 text-ink">Admin Dashboard</h1>
+        <p className="mt-1.5 text-body text-muted">
           Platform summary — computed live from the existing API endpoints.
         </p>
       </div>
@@ -58,7 +58,7 @@ export default function AdminDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+                <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-3">Claim</th>
                   <th className="px-4 py-3">Claimant</th>
                   <th className="px-4 py-3">Pairing</th>
@@ -67,9 +67,9 @@ export default function AdminDashboard() {
                   <th className="px-4 py-3">Date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line text-xs">
+              <tbody className="divide-y divide-line text-small">
                 {allClaims.map((c) => (
-                  <tr key={c.id} className="transition-colors hover:bg-[#fafdfb]">
+                  <tr key={c.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">#{c.id}</td>
                     <td className="px-4 py-3.5">user #{c.user_id}</td>
                     <td className="px-4 py-3.5">

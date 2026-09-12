@@ -11,13 +11,20 @@ describe("Button", () => {
   it("applies outline variant class by default", () => {
     render(<Button>Test</Button>);
     const btn = screen.getByRole("button");
-    expect(btn.className).toContain("bg-white");
+    expect(btn.className).toContain("bg-surface");
   });
 
-  it("applies primary variant class", () => {
+  it("applies primary variant class (ink fill)", () => {
     render(<Button variant="primary">Primary</Button>);
     const btn = screen.getByRole("button");
-    expect(btn.className).toContain("bg-brand");
+    expect(btn.className).toContain("bg-ink");
+  });
+
+  it("applies textLink variant class (amber, no container)", () => {
+    render(<Button variant="textLink">Forgot Password?</Button>);
+    const btn = screen.getByRole("button");
+    expect(btn.className).toContain("text-amber");
+    expect(btn.className).toContain("bg-transparent");
   });
 
   it("applies danger variant class", () => {
@@ -30,6 +37,34 @@ describe("Button", () => {
     render(<Button variant="ghost">Ghost</Button>);
     const btn = screen.getByRole("button");
     expect(btn.className).toContain("bg-transparent");
+  });
+
+  describe("design system 07 sizing", () => {
+    it.each(["primary", "outline", "danger"] as const)("%s is 44px tall with a 10px radius", (variant) => {
+      render(<Button variant={variant}>Sized</Button>);
+      const btn = screen.getByRole("button");
+      expect(btn.className).toContain("h-11");
+      expect(btn.className).toContain("rounded-input");
+    });
+
+    it("uses Inter semibold at 14px", () => {
+      render(<Button variant="primary">Type</Button>);
+      const btn = screen.getByRole("button");
+      expect(btn.className).toContain("text-sm");
+      expect(btn.className).toContain("font-semibold");
+    });
+
+    it("gives the textLink variant a 44px click target without a container", () => {
+      render(<Button variant="textLink">Link</Button>);
+      const btn = screen.getByRole("button");
+      expect(btn.className).toContain("min-h-11");
+    });
+
+    it("reduces contrast on the disabled state", () => {
+      render(<Button variant="primary" disabled>Off</Button>);
+      const btn = screen.getByRole("button");
+      expect(btn.className).toContain("disabled:opacity-50");
+    });
   });
 
   it("is disabled when disabled prop is set", () => {
