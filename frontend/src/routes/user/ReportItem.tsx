@@ -72,10 +72,8 @@ export default function ReportItem({ kind, onDone }: Props) {
   return (
     <div className="max-w-3xl space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">
-          Report {isLost ? "Lost" : "Found"} Item
-        </h1>
-        <p className="mt-1.5 text-sm text-muted">
+        <h1 className="font-display text-h1 text-ink">Report {isLost ? "Lost" : "Found"} Item</h1>
+        <p className="mt-1.5 text-body text-muted">
           {isLost
             ? "Submit details for an item you've misplaced."
             : "Log an item you've discovered to help return it."}
@@ -129,14 +127,14 @@ export default function ReportItem({ kind, onDone }: Props) {
                 type="file"
                 accept="image/*"
                 onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-                className="block w-full text-xs text-muted file:mr-3 file:cursor-pointer file:rounded-lg file:border file:border-line file:bg-soft file:px-3 file:py-2 file:text-xs file:font-semibold file:text-ink hover:file:bg-brand-light"
+                className="block w-full text-small text-muted file:mr-3 file:cursor-pointer file:rounded-input file:border file:border-line file:bg-soft file:px-3 file:py-2 file:text-small file:font-semibold file:text-ink hover:file:bg-line"
               />
-              {photo && <p className="mt-1.5 text-xs text-brand">{photo.name} will be attached to the report.</p>}
+              {photo && <p className="mt-1.5 text-small text-amber">{photo.name} will be attached to the report.</p>}
             </Field>
           </div>
 
           {error && (
-            <div className="sm:col-span-2 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-[0.9rem] text-danger">
+            <div className="sm:col-span-2 rounded-input border border-danger/30 bg-danger/5 px-4 py-3 text-body text-danger">
               {error}
             </div>
           )}

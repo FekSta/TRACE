@@ -42,8 +42,8 @@ export default function StatusUpdate() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Update Item Status</h1>
-        <p className="mt-1.5 text-sm text-muted">Track items through the recovery workflow.</p>
+        <h1 className="font-display text-h1 text-ink">Update Item Status</h1>
+        <p className="mt-1.5 text-body text-muted">Track items through the recovery workflow.</p>
       </div>
 
       <Card title="All items" meta={`${rows.length} record(s)`} noPadding>
@@ -53,7 +53,7 @@ export default function StatusUpdate() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+                <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-3">Item</th>
                   <th className="px-4 py-3">Kind</th>
                   <th className="px-4 py-3">Status</th>
@@ -61,9 +61,9 @@ export default function StatusUpdate() {
                   <th className="px-4 py-3">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line text-xs">
+              <tbody className="divide-y divide-line text-small">
                 {rows.map((r) => (
-                  <tr key={`${r.kind}-${r.id}`} className="transition-colors hover:bg-[#fafdfb]">
+                  <tr key={`${r.kind}-${r.id}`} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5">
                       <span className="font-semibold text-ink">{r.title}</span>
                       <span className="ml-2 text-muted">#{r.id}</span>

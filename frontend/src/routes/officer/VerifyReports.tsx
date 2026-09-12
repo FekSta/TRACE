@@ -78,8 +78,8 @@ export default function VerifyReports() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Verify Reports</h1>
-        <p className="mt-1.5 text-sm text-muted">Review new lost and found reports before they enter the workflow.</p>
+        <h1 className="font-display text-h1 text-ink">Verify Reports</h1>
+        <p className="mt-1.5 text-body text-muted">Review new lost and found reports before they enter the workflow.</p>
       </div>
 
       {rows.length === 0 ? (
@@ -92,32 +92,32 @@ export default function VerifyReports() {
             <Card key={`${r.kind}-${r.id}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="font-display text-[19px] font-semibold text-ink">{r.title}</h3>
-                  <p className="mt-1 text-xs text-muted">
+                  <h3 className="font-display text-h3 text-ink">{r.title}</h3>
+                  <p className="mt-1 text-small text-muted">
                     {r.kind === "lost" ? "Lost" : "Found"} report · #{r.id} · category #{r.category_id}
                   </p>
                 </div>
                 <StatusBadge status={r.status} />
               </div>
 
-              <p className="mt-3.5 line-clamp-3 text-[13px] leading-relaxed text-muted">
+              <p className="mt-3.5 line-clamp-3 text-body leading-relaxed text-muted">
                 {r.description || "No description provided."}
               </p>
 
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted">
+              <div className="mt-3 flex flex-wrap gap-2 text-small text-muted">
                 {r.kind === "lost" ? (
                   <>
-                    {r.brand && <span className="rounded bg-soft px-2 py-1">Brand: {r.brand}</span>}
-                    {r.colour && <span className="rounded bg-soft px-2 py-1">Colour: {r.colour}</span>}
-                    {r.location_lost && <span className="rounded bg-soft px-2 py-1">📍 {r.location_lost}</span>}
-                    {r.date_lost && <span className="rounded bg-soft px-2 py-1">Lost: {r.date_lost}</span>}
+                    {r.brand && <span className="rounded-sm bg-soft px-2 py-1">Brand: {r.brand}</span>}
+                    {r.colour && <span className="rounded-sm bg-soft px-2 py-1">Colour: {r.colour}</span>}
+                    {r.location_lost && <span className="rounded-sm bg-soft px-2 py-1">📍 {r.location_lost}</span>}
+                    {r.date_lost && <span className="rounded-sm bg-soft px-2 py-1">Lost: {r.date_lost}</span>}
                   </>
                 ) : (
                   <>
-                    {r.brand && <span className="rounded bg-soft px-2 py-1">Brand: {r.brand}</span>}
-                    {r.colour && <span className="rounded bg-soft px-2 py-1">Colour: {r.colour}</span>}
-                    {r.storage_location && <span className="rounded bg-soft px-2 py-1">📍 {r.storage_location}</span>}
-                    {r.date_found && <span className="rounded bg-soft px-2 py-1">Found: {r.date_found}</span>}
+                    {r.brand && <span className="rounded-sm bg-soft px-2 py-1">Brand: {r.brand}</span>}
+                    {r.colour && <span className="rounded-sm bg-soft px-2 py-1">Colour: {r.colour}</span>}
+                    {r.storage_location && <span className="rounded-sm bg-soft px-2 py-1">📍 {r.storage_location}</span>}
+                    {r.date_found && <span className="rounded-sm bg-soft px-2 py-1">Found: {r.date_found}</span>}
                   </>
                 )}
               </div>
@@ -150,9 +150,9 @@ export default function VerifyReports() {
       >
         {selected && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-line bg-soft p-3.5 text-sm text-ink">
+            <div className="rounded-input border border-line bg-soft p-3.5 text-body text-ink">
               <strong>{selected.title}</strong>
-              <span className="ml-2 text-xs text-muted">
+              <span className="ml-2 text-small text-muted">
                 ({selected.kind === "lost" ? "lost" : "found"}, currently {selected.status})
               </span>
             </div>

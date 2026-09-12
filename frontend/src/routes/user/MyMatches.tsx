@@ -46,8 +46,8 @@ export default function MyMatches() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">My Matches</h1>
-        <p className="mt-1.5 text-sm text-muted">
+        <h1 className="font-display text-h1 text-ink">My Matches</h1>
+        <p className="mt-1.5 text-body text-muted">
           Suggested pairings between your reports and other users&apos; items. Accepting a match submits an ownership claim.
         </p>
       </div>
@@ -67,12 +67,12 @@ export default function MyMatches() {
               <Card key={m.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h3 className="font-display text-[19px] font-semibold text-ink">
+                    <h3 className="font-display text-h3 text-ink">
                       {lostTitle.get(m.lost_item_id) ?? `Lost item #${m.lost_item_id}`}
                       <span className="mx-1.5 text-muted">↔</span>
                       {foundTitle.get(m.found_item_id) ?? `Found item #${m.found_item_id}`}
                     </h3>
-                    <p className="mt-1 text-xs text-muted">
+                    <p className="mt-1 text-small text-muted">
                       Lost #<span className="font-semibold text-ink">{m.lost_item_id}</span> · Found #
                       <span className="font-semibold text-ink">{m.found_item_id}</span>
                     </p>
@@ -80,15 +80,15 @@ export default function MyMatches() {
                   <StatusBadge status={m.status} />
                 </div>
 
-                {m.match_reason && <p className="mt-3.5 text-[13px] leading-relaxed text-muted">{m.match_reason}</p>}
+                {m.match_reason && <p className="mt-3.5 text-body leading-relaxed text-muted">{m.match_reason}</p>}
 
                 <div className="mt-3.5">
-                  <div className="mb-1 flex items-center justify-between text-xs">
+                  <div className="mb-1 flex items-center justify-between text-small">
                     <span className="font-semibold text-ink">Match confidence</span>
-                    <strong className={score >= 60 ? "text-brand" : "text-warning"}>{score}%</strong>
+                    <strong className={score >= 60 ? "text-success-ink" : "text-warning"}>{score}%</strong>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-[#dce2e8]">
-                    <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${score}%` }} />
+                  <div className="h-2 overflow-hidden rounded-full bg-soft">
+                    <div className="h-full rounded-full bg-amber transition-all" style={{ width: `${score}%` }} />
                   </div>
                 </div>
 

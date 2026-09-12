@@ -28,8 +28,8 @@ export default function Notifications() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Notifications</h1>
-        <p className="mt-1.5 text-sm text-muted">
+        <h1 className="font-display text-h1 text-ink">Notifications</h1>
+        <p className="mt-1.5 text-body text-muted">
           Emails for matches, claims, and collections land in your inbox (Mailpit during local dev).
         </p>
       </div>
@@ -64,11 +64,11 @@ export default function Notifications() {
           <ul className="divide-y divide-line">
             {list.map((n) => (
               <li key={n.id} className="flex items-start gap-3 py-3.5">
-                <span className="material-symbols-outlined mt-0.5 text-brand">notifications</span>
+                <span className="material-symbols-outlined mt-0.5 text-amber">notifications</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-ink">{n.title}</p>
-                  {n.message && <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{n.message}</p>}
-                  <p className="mt-1 text-[11px] text-muted">
+                  <p className="text-body font-semibold text-ink">{n.title}</p>
+                  {n.message && <p className="mt-0.5 text-body leading-relaxed text-muted">{n.message}</p>}
+                  <p className="mt-1 text-small text-muted">
                     {n.notification_type} · {new Date(n.created_at).toLocaleString()}
                     {n.is_read ? " · read" : " · unread"}
                   </p>

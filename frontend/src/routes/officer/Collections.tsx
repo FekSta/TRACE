@@ -48,8 +48,8 @@ export default function Collections() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-[30px] font-bold leading-tight text-ink">Approve Collections</h1>
-        <p className="mt-1.5 text-sm text-muted">Items with approved claims, ready for pickup.</p>
+        <h1 className="font-display text-h1 text-ink">Approve Collections</h1>
+        <p className="mt-1.5 text-body text-muted">Items with approved claims, ready for pickup.</p>
       </div>
 
       <Card title="Ready for pickup" meta={`${list.length} approved, active claim(s)`} noPadding>
@@ -59,7 +59,7 @@ export default function Collections() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+                <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-3">Claim</th>
                   <th className="px-4 py-3">Claimant</th>
                   <th className="px-4 py-3">Item pairing</th>
@@ -68,9 +68,9 @@ export default function Collections() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line text-xs">
+              <tbody className="divide-y divide-line text-small">
                 {list.map((c) => (
-                  <tr key={c.id} className="transition-colors hover:bg-[#fafdfb]">
+                  <tr key={c.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">#{c.id}</td>
                     <td className="px-4 py-3.5">user #{c.user_id}</td>
                     <td className="px-4 py-3.5">
@@ -113,7 +113,7 @@ export default function Collections() {
       >
         {selected && (
           <div className="space-y-4">
-            <p className="rounded-lg border border-line bg-soft px-3 py-2.5 text-xs leading-relaxed text-muted">
+            <p className="rounded-input border border-line bg-soft px-3 py-2.5 text-small leading-relaxed text-muted">
               Handing over Lost #<strong className="text-ink">{selected.lost_item_id}</strong> ↔ Found #
               <strong className="text-ink">{selected.found_item_id}</strong> to user #<strong className="text-ink">{selected.user_id}</strong>.
               This writes a CollectionRecord and completes the claim.

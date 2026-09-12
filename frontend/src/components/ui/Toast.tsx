@@ -13,6 +13,12 @@ export function useToast() {
   return useContext(ToastContext);
 }
 
+/**
+ * Toast — transient feedback surface.
+ *
+ * Success uses ink (the system's primary emphasis); green is reserved for
+ * status semantics (§09) rather than for chrome. Errors use danger.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -29,8 +35,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {toast && (
         <div
           role="status"
-          className={`fixed bottom-6 right-6 z-[60] translate-y-0 rounded-lg px-4 py-3 text-xs font-medium text-white opacity-100 shadow-[0_8px_30px_rgba(0,0,0,0.18)] transition-all duration-200 ${
-            toast.tone === "error" ? "bg-danger" : "bg-[#123b27]"
+          className={`fixed bottom-6 right-6 z-[60] translate-y-0 rounded-input px-4 py-3 text-small font-medium text-white opacity-100 shadow-hover transition-all duration-200 ${
+            toast.tone === "error" ? "bg-danger" : "bg-ink"
           }`}
         >
           {toast.message}

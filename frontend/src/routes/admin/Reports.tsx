@@ -23,7 +23,7 @@ import type { Category, ReportResponse, ReportRow } from "../../lib/types";
  * page"): a results grid docked at the top, a "Configure Report" panel below
  * with Filter / Sort According To / Sorting Order groups, and two actions
  * (Generate + Clear Filter). Layout and interaction pattern follow the
- * reference screenshots; the visual skin is the officer-derived design system.
+ * reference screenshots; the visual skin is TRACE Design System v1.0.
  */
 
 interface FilterState {
@@ -85,25 +85,26 @@ function formatStamp(iso: string): string {
 
 const STATUS_LEGEND = [
   {
-    dot: "bg-brand",
-    title: "Positive / complete",
-    values: "Active, Approved, Available, Claimed, Matched, Returned, Completed, Closed",
+    dot: "bg-success",
+    title: "Approved / returned",
+    values: "Active, Approved, Available, Accepted, Returned, Completed, Closed, Found",
   },
-  { dot: "bg-warning", title: "Awaiting action", values: "Pending, Reported, Suggested" },
-  { dot: "bg-danger", title: "Closed negatively", values: "Rejected, Cancelled" },
-  { dot: "bg-muted", title: "Inactive", values: "Suspended, Inactive, Archived" },
+  { dot: "bg-info", title: "Claimed / verifying", values: "Claimed, Verifying" },
+  { dot: "bg-warning", title: "Matched / awaiting action", values: "Matched, Pending, Suggested, Lost" },
+  { dot: "bg-muted", title: "Reported / inactive", values: "Reported, Suspended, Inactive, Archived" },
+  { dot: "bg-danger", title: "Rejected / cancelled", values: "Rejected, Cancelled" },
 ];
 
 /** Status colour key — mandatory because the grid uses colour-coded badges. */
 function StatusLegend() {
   return (
-    <div className="rounded-[12px] border border-line bg-surface px-4 py-3 shadow-card">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">
+    <div className="rounded-card border border-line bg-surface px-4 py-3 shadow-card">
+      <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">
         Legend — status colours
       </span>
       <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
         {STATUS_LEGEND.map((item) => (
-          <div key={item.title} className="flex items-center gap-2 text-xs text-muted">
+          <div key={item.title} className="flex items-center gap-2 text-small text-muted">
             <span className={`h-2.5 w-2.5 rounded-full ${item.dot}`} />
             <span className="font-semibold text-ink">{item.title}:</span>
             <span>{item.values}</span>
@@ -132,7 +133,7 @@ function SkeletonRows({ columns, lines = 5 }: { columns: number; lines?: number 
         <tr key={rowIndex} className="animate-pulse">
           {Array.from({ length: columns }).map((__, columnIndex) => (
             <td key={columnIndex} className="px-4 py-3.5">
-              <span className="block h-3 w-full max-w-[140px] rounded bg-soft" />
+              <span className="block h-3 w-full max-w-[140px] rounded-sm bg-soft" />
             </td>
           ))}
         </tr>
@@ -146,10 +147,10 @@ function RowDetail({ columns, row }: { columns: ReportColumn[]; row: ReportRow }
   const labels = new Map(columns.map((column) => [column.key, column.label]));
   return (
     <div>
-      <span className="text-[10px] font-semibold uppercase tracking-[0.06em] text-muted">
+      <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">
         Record detail
       </span>
-      <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:grid-cols-3 lg:grid-cols-4">
+      <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-2 text-small sm:grid-cols-3 lg:grid-cols-4">
         {Object.entries(row).map(([key, value]) => (
           <div key={key}>
             <dt className="text-muted">
@@ -242,14 +243,12 @@ export default function Reports() {
       {/* Sticky header — title, timestamp, report-type selector, global actions */}
       <div className="sticky top-[72px] z-[5] -mx-2 flex flex-wrap items-end justify-between gap-4 bg-canvas px-2 pb-3 pt-1">
         <div>
-          <h1 className="font-display text-[30px] font-bold leading-tight text-ink">
-            {config.title}
-          </h1>
-          <p className="mt-1.5 text-sm text-muted">{generatedLabel}</p>
+          <h1 className="font-display text-h1 text-ink">{config.title}</h1>
+          <p className="mt-1.5 text-body text-muted">{generatedLabel}</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div>
-            <label htmlFor="report-type" className="mb-1.5 block text-xs font-semibold text-ink">
+            <label htmlFor="report-type" className="mb-1.5 block text-small font-semibold text-ink">
               Report type
             </label>
             <Select
@@ -279,7 +278,7 @@ export default function Reports() {
       {report.error && (
         <div
           role="alert"
-          className="rounded-[12px] border border-danger/30 bg-[#fdecec] px-4 py-3 text-sm text-danger"
+          className="rounded-card border border-danger/30 bg-danger/10 px-4 py-3 text-body text-danger"
         >
           {report.error}
         </div>
@@ -296,7 +295,7 @@ export default function Reports() {
         <div className="max-h-[60vh] overflow-auto">
           <table className="w-full border-collapse text-left">
             <thead className="sticky top-0 z-[1] bg-soft">
-              <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+              <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                 {config.columns.map((column) => (
                   <th
                     key={column.key}
@@ -307,7 +306,7 @@ export default function Reports() {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-line text-xs">
+            <tbody className="divide-y divide-line text-small">
               {report.loading ? (
                 <SkeletonRows columns={config.columns.length} />
               ) : rows.length === 0 ? (
@@ -333,7 +332,7 @@ export default function Reports() {
                             setExpandedId(expanded ? null : rowId);
                           }
                         }}
-                        className="cursor-pointer transition-colors hover:bg-[#fafdfb]"
+                        className="cursor-pointer transition-colors hover:bg-soft"
                       >
                         {config.columns.map((column) => (
                           <td key={column.key} className="px-4 py-3.5 align-top">
@@ -363,13 +362,13 @@ export default function Reports() {
       <Card title="Configure Report">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <section>
-            <h4 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-ink">
+            <h4 className="text-small font-semibold uppercase tracking-[0.06em] text-ink">
               Filter
             </h4>
             <div className="mt-3 space-y-3">
               {config.hasDateRange && (
                 <div>
-                  <span className="mb-1.5 block text-xs font-semibold text-ink">
+                  <span className="mb-1.5 block text-small font-semibold text-ink">
                     {config.dateLabel} range
                   </span>
                   <div className="grid grid-cols-2 gap-2">
@@ -484,16 +483,16 @@ export default function Reports() {
           </section>
 
           <section>
-            <h4 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-ink">
+            <h4 className="text-small font-semibold uppercase tracking-[0.06em] text-ink">
               Sort According To
             </h4>
             <div className="mt-3 space-y-2.5">
               {config.sortFields.map((field) => (
-                <label key={field.key} className="flex items-center gap-2.5 text-sm text-ink">
+                <label key={field.key} className="flex items-center gap-2.5 text-body text-ink">
                   <input
                     type="radio"
                     name="sort-by"
-                    className="h-4 w-4 accent-brand"
+                    className="h-4 w-4 accent-amber"
                     checked={draft.sortBy === field.key}
                     onChange={() => setDraft({ ...draft, sortBy: field.key })}
                   />
@@ -504,7 +503,7 @@ export default function Reports() {
           </section>
 
           <section>
-            <h4 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-ink">
+            <h4 className="text-small font-semibold uppercase tracking-[0.06em] text-ink">
               Sorting Order
             </h4>
             <div className="mt-3 space-y-2.5">
@@ -512,11 +511,11 @@ export default function Reports() {
                 { value: "asc", label: "Ascending" },
                 { value: "desc", label: "Descending" },
               ].map((option) => (
-                <label key={option.value} className="flex items-center gap-2.5 text-sm text-ink">
+                <label key={option.value} className="flex items-center gap-2.5 text-body text-ink">
                   <input
                     type="radio"
                     name="sort-order"
-                    className="h-4 w-4 accent-brand"
+                    className="h-4 w-4 accent-amber"
                     checked={draft.sortOrder === option.value}
                     onChange={() =>
                       setDraft({ ...draft, sortOrder: option.value as "asc" | "desc" })

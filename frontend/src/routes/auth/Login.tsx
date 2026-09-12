@@ -3,11 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { decodeToken } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
+import Button from "../../components/ui/Button";
+import { Field, TextInput } from "../../components/ui/Field";
 
 /**
- * Login — direct translation of demo/auth/login.html, backed by the real
- * POST /auth/login endpoint (Notes.md §8.3). On success the token is stored
- * and the decoded Role claim is logged (Module 7 issue 1 DoD artifact).
+ * Login — backed by the real POST /auth/login endpoint (Notes.md §8.3).
+ * Visual system: TRACE Design System §12 (split auth layout: white form
+ * panel + `auth-panel` visual side, 20px panel radius, frosted badge).
  */
 export default function Login() {
   const navigate = useNavigate();
@@ -62,61 +64,53 @@ export default function Login() {
     }
   }
 
-  const inputClass =
-    "w-full rounded-[10px] border border-gray-300 bg-white px-4 py-3.5 text-[15px] text-auth-ink outline-none transition focus:border-auth-amber focus:ring-[3px] focus:ring-auth-amber/15";
-
   return (
-    <div className="min-h-screen bg-slate-50 py-6 md:py-[50px]">
-      <div className="mx-auto grid w-[min(1200px,95%)] min-h-[calc(100vh-100px)] overflow-hidden rounded-[20px] bg-white shadow-[0_10px_30px_rgba(0,0,0,0.08)] md:grid-cols-2">
+    <div className="min-h-screen bg-canvas py-6 md:py-[50px]">
+      <div className="mx-auto grid w-[min(1200px,95%)] min-h-[calc(100vh-100px)] overflow-hidden rounded-auth bg-surface shadow-card md:grid-cols-2">
         {/* Left — form */}
-        <section className="flex flex-col justify-between bg-white p-8 md:p-[60px]">
+        <section className="flex flex-col justify-between bg-surface p-8 md:p-[60px]">
           <div className="fade-in-up">
             <div className="flex items-center gap-3">
-              <div className="grid h-[42px] w-[42px] place-items-center rounded-lg bg-brand font-display text-lg font-extrabold text-white">
+              <div className="grid h-[42px] w-[42px] place-items-center rounded-input bg-ink font-display text-h3 font-bold text-white">
                 T
               </div>
-              <h2 className="font-display text-[1.7rem] font-extrabold text-auth-ink">TRACE</h2>
+              <h2 className="font-display text-h2 text-ink">TRACE</h2>
             </div>
-            <p className="mb-8 mt-2 text-sm text-muted">Every lost item leaves a trace.</p>
+            <p className="mb-8 mt-2 text-body text-muted">Every lost item leaves a trace.</p>
 
             <div className="mb-8">
-              <h1 className="mb-2 font-display text-[2rem] font-bold text-auth-ink">Welcome Back</h1>
-              <p className="leading-relaxed text-muted">
+              <h1 className="mb-2 font-display text-h1 text-ink">Welcome Back</h1>
+              <p className="text-body-lg leading-relaxed text-muted">
                 Sign in to manage your lost item reports and recovery claims.
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
-              <div>
-                <label className="mb-2 block text-[0.95rem] font-semibold text-gray-700" htmlFor="email">
-                  Email Address
-                </label>
-                <input
+              <Field label="Email Address" htmlFor="email" error={emailError}>
+                <TextInput
                   id="email"
                   type="email"
-                  className={inputClass}
                   placeholder="name@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
-                {emailError && <small className="mt-1.5 block text-[0.85rem] text-danger">{emailError}</small>}
-              </div>
+              </Field>
 
               <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <label className="text-[0.95rem] font-semibold text-gray-700" htmlFor="password">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="text-small font-semibold text-ink" htmlFor="password">
                     Password
                   </label>
-                  <Link to="#" className="text-[0.9rem] text-auth-amber hover:underline">
+                  <Button variant="textLink" type="button">
                     Forgot Password?
-                  </Link>
+                  </Button>
                 </div>
                 <div className="relative">
-                  <input
+                  <TextInput
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    className={`${inputClass} pr-14`}
+                    className="pr-14"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -124,7 +118,7 @@ export default function Login() {
                   />
                   <button
                     type="button"
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted transition hover:text-auth-ink"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted transition hover:text-ink"
                     onClick={() => setShowPassword((v) => !v)}
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
@@ -133,22 +127,16 @@ export default function Login() {
                     </span>
                   </button>
                 </div>
-                {passwordError && (
-                  <small className="mt-1.5 block text-[0.85rem] text-danger">{passwordError}</small>
-                )}
+                {passwordError && <p className="mt-1 text-small text-danger">{passwordError}</p>}
               </div>
 
               {formError && (
-                <div className="rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-[0.9rem] text-danger">
+                <div className="rounded-input border border-danger/30 bg-danger/5 px-4 py-3 text-body text-danger">
                   {formError}
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={submitting}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-[10px] bg-auth-ink px-4 py-3.5 font-semibold text-white transition hover:-translate-y-0.5 hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
-              >
+              <Button type="submit" variant="primary" disabled={submitting} className="w-full">
                 {submitting ? (
                   <>
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
@@ -157,26 +145,26 @@ export default function Login() {
                 ) : (
                   "Log In"
                 )}
-              </button>
+              </Button>
             </form>
           </div>
 
-          <div className="mt-10 text-center text-muted">
+          <div className="mt-10 text-center text-body text-muted">
             Don&apos;t have an account?{" "}
-            <Link to="/register" className="font-semibold text-auth-amber hover:underline">
+            <Link to="/register" className="font-semibold text-amber hover:underline">
               Create one
             </Link>
           </div>
         </section>
 
-        {/* Right — image side */}
-        <section className="relative hidden overflow-hidden bg-auth-navy md:block">
+        {/* Right — visual panel */}
+        <section className="relative hidden overflow-hidden bg-auth-panel md:block">
           <img
             src="/images/login-side-image.jpeg"
             alt="TRACE Login Illustration"
             className="h-full w-full object-cover"
           />
-          <div className="absolute inset-0 flex items-end justify-center bg-gradient-to-b from-auth-navy/25 to-auth-navy/55 p-10">
+          <div className="absolute inset-0 flex items-end justify-center bg-gradient-to-b from-auth-panel/25 to-auth-panel/55 p-10">
             <div className="flex items-center gap-2.5 rounded-full bg-white/15 px-6 py-3 text-white backdrop-blur-md">
               <span className="material-symbols-outlined text-[22px]">stars</span>
               <span className="font-medium">Recovery starts here.</span>
@@ -185,12 +173,18 @@ export default function Login() {
         </section>
       </div>
 
-      <footer className="flex items-center justify-between px-[50px] py-6 text-[0.9rem] text-muted">
+      <footer className="flex items-center justify-between px-[50px] py-6 text-body text-muted">
         <p>© 2026 TRACE. All rights reserved.</p>
         <nav className="flex gap-5">
-          <a href="#" className="text-inherit hover:text-auth-ink">Privacy</a>
-          <a href="#" className="text-inherit hover:text-auth-ink">Terms</a>
-          <a href="#" className="text-inherit hover:text-auth-ink">Support</a>
+          <a href="#" className="text-inherit hover:text-ink">
+            Privacy
+          </a>
+          <a href="#" className="text-inherit hover:text-ink">
+            Terms
+          </a>
+          <a href="#" className="text-inherit hover:text-ink">
+            Support
+          </a>
         </nav>
       </footer>
     </div>

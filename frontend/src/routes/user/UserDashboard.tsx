@@ -55,8 +55,8 @@ export default function UserDashboard({ onReport }: Props) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-[30px] font-bold leading-tight text-ink">My Dashboard</h1>
-          <p className="mt-1.5 text-sm text-muted">Track your reports, matches, and claims.</p>
+          <h1 className="font-display text-h1 text-ink">My Dashboard</h1>
+          <p className="mt-1.5 text-body text-muted">Track your reports, matches, and claims.</p>
         </div>
         <Button variant="primary" onClick={onReport}>
           <span className="material-symbols-outlined text-[18px]">add</span>
@@ -84,7 +84,7 @@ export default function UserDashboard({ onReport }: Props) {
           <EmptyState
             message="No reports yet."
             hint={
-              <button onClick={onReport} className="font-semibold text-brand hover:underline">
+              <button onClick={onReport} className="font-semibold text-amber hover:underline">
                 Report your first lost or found item →
               </button>
             }
@@ -93,7 +93,7 @@ export default function UserDashboard({ onReport }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="bg-soft text-[10px] uppercase tracking-[0.06em] text-muted">
+                <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
                   <th className="px-4 py-3">Item</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Status</th>
@@ -101,9 +101,9 @@ export default function UserDashboard({ onReport }: Props) {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line text-xs">
+              <tbody className="divide-y divide-line text-small">
                 {activity.map((row) => (
-                  <tr key={`${row.type}-${row.id}`} className="transition-colors hover:bg-[#fafdfb]">
+                  <tr key={`${row.type}-${row.id}`} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5">
                       <span className="font-semibold text-ink">{row.title}</span>
                       <span className="ml-2 text-muted">#{row.id}</span>

@@ -11,6 +11,7 @@ import UserPortal from "./routes/user/UserPortal";
 import OfficerPortal from "./routes/officer/OfficerPortal";
 import AdminPortal from "./routes/admin/AdminPortal";
 
+
 /** "/" and unknown paths resolve to the session's own portal (or /login). */
 function RootRedirect() {
   const { session } = useAuth();
