@@ -23,4 +23,9 @@ describe("StatCard", () => {
     render(<StatCard label="Score" value={<span>98%</span>} />);
     expect(screen.getByText("98%")).toBeInTheDocument();
   });
+
+  it("renders an icon tile when an icon is given", () => {
+    const { container } = render(<StatCard label="Lost Items" value={3} icon="inventory_2" />);
+    expect(container.querySelector(".material-symbols-outlined")?.textContent).toBe("inventory_2");
+  });
 });

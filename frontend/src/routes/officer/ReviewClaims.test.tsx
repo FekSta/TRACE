@@ -60,7 +60,8 @@ describe("ReviewClaims", () => {
       if (String(url).includes("/claims") && (!opts?.method || opts.method === "GET")) {
         return { ok: true, status: 200, text: async () => JSON.stringify([pendingClaim]) };
       }
-      return { ok: true, status: 200, text: async () => JSON.stringify({}) };
+      // unmatched GETs are the screen's item/match context fetches — empty lists
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -74,12 +75,14 @@ describe("ReviewClaims", () => {
       if (String(url).includes("/claims") && (!opts?.method || opts.method === "GET")) {
         return { ok: true, status: 200, text: async () => JSON.stringify([]) };
       }
-      return { ok: true, status: 200, text: async () => JSON.stringify({}) };
+      // unmatched GETs are the screen's item/match context fetches — empty lists
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
     });
     vi.stubGlobal("fetch", mockFetch);
 
     renderWithProviders(<ReviewClaims />);
-    expect(await screen.findByText("No pending claims to review.")).toBeInTheDocument();
+    // Empty copy changed with the All / Awaiting Review / Approved / Rejected tabs.
+    expect(await screen.findByText("No claims in this view.")).toBeInTheDocument();
   });
 
   it("opens approve modal when 'Approve Claim' is clicked", async () => {
@@ -87,7 +90,8 @@ describe("ReviewClaims", () => {
       if (String(url).includes("/claims") && (!opts?.method || opts.method === "GET")) {
         return { ok: true, status: 200, text: async () => JSON.stringify([pendingClaim]) };
       }
-      return { ok: true, status: 200, text: async () => JSON.stringify({}) };
+      // unmatched GETs are the screen's item/match context fetches — empty lists
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
     });
     vi.stubGlobal("fetch", mockFetch);
     const user = userEvent.setup();
@@ -105,7 +109,8 @@ describe("ReviewClaims", () => {
       if (String(url).includes("/claims") && (!opts?.method || opts.method === "GET")) {
         return { ok: true, status: 200, text: async () => JSON.stringify([pendingClaim]) };
       }
-      return { ok: true, status: 200, text: async () => JSON.stringify({}) };
+      // unmatched GETs are the screen's item/match context fetches — empty lists
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
     });
     vi.stubGlobal("fetch", mockFetch);
     const user = userEvent.setup();
@@ -126,7 +131,8 @@ describe("ReviewClaims", () => {
       if (String(url).includes("/claims") && (!opts?.method || opts.method === "GET")) {
         return { ok: true, status: 200, text: async () => JSON.stringify([pendingClaim]) };
       }
-      return { ok: true, status: 200, text: async () => JSON.stringify({}) };
+      // unmatched GETs are the screen's item/match context fetches — empty lists
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
     });
     vi.stubGlobal("fetch", mockFetch);
     const user = userEvent.setup();
@@ -157,7 +163,8 @@ describe("ReviewClaims", () => {
       if (String(url).includes("/claims") && (!opts?.method || opts.method === "GET")) {
         return { ok: true, status: 200, text: async () => JSON.stringify([pendingClaim]) };
       }
-      return { ok: true, status: 200, text: async () => JSON.stringify({}) };
+      // unmatched GETs are the screen's item/match context fetches — empty lists
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
     });
     vi.stubGlobal("fetch", mockFetch);
     const user = userEvent.setup();
@@ -181,5 +188,62 @@ describe("ReviewClaims", () => {
       const body = JSON.parse((postCall![1] as RequestInit).body as string);
       expect(body.result).toBe("Rejected");
     });
+  });
+
+  it("shows match confidence and identifying features joined from the items", async () => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string, opts?: RequestInit) => {
+      const path = String(url);
+      if (path.includes("/items/lost")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify([
+              {
+                id: 1,
+                user_id: 1,
+                category_id: 1,
+                title: "iPhone 15 Pro",
+                description: "Black case with a small scratch on the corner",
+                brand: "Apple",
+                colour: "Black",
+                date_lost: "2026-08-10",
+                location_lost: "Cafeteria",
+                status: "Matched",
+              },
+            ]),
+        };
+      }
+      if (path.includes("/matches")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify([
+              {
+                id: 5,
+                lost_item_id: 1,
+                found_item_id: 2,
+                match_score: "92.4",
+                match_reason: null,
+                status: "Accepted",
+                generated_at: "2026-08-12T09:00:00Z",
+              },
+            ]),
+        };
+      }
+      if (path.includes("/claims") && (!opts?.method || opts.method === "GET")) {
+        return { ok: true, status: 200, text: async () => JSON.stringify([pendingClaim]) };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify([]) };
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    renderWithProviders(<ReviewClaims />);
+
+    expect(await screen.findByText("iPhone 15 Pro")).toBeInTheDocument();
+    expect(screen.getByText("92%")).toBeInTheDocument();
+    expect(screen.getByText(/Black case with a small scratch/)).toBeInTheDocument();
+    expect(screen.getByText(/Lost at Cafeteria/)).toBeInTheDocument();
   });
 });

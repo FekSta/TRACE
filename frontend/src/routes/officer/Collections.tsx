@@ -1,31 +1,80 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import { useToast } from "../../components/ui/Toast";
 import { api, ApiError } from "../../lib/api";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
+import StatusIndicator from "../../components/ui/StatusIndicator";
 import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
 import Loading from "../../components/ui/Loading";
+import FilterTabs from "../../components/ui/FilterTabs";
+import TableFooter from "../../components/ui/TableFooter";
 import { Field, TextInput } from "../../components/ui/Field";
-import type { Claim } from "../../lib/types";
+import { countByTab, filterRows } from "../../lib/filterRows";
+import type { Claim, LostItem, FoundItem } from "../../lib/types";
 
-/** Approve collections — demo/officer renderCollections(), backed by
- *  GET /claims?verification_status=Approved and POST /claims/{id}/collect
- *  (writes a CollectionRecord; claim → Completed, items → Closed/Returned). */
-export default function Collections() {
+const TABS = [
+  { id: "ready", label: "Ready for pickup" },
+  { id: "collected", label: "Collected" },
+  { id: "all", label: "All" },
+];
+
+function tabOf(claim: Claim): string {
+  return claim.status === "Completed" ? "collected" : "ready";
+}
+
+/**
+ * Approve collections — `design/Officer/Officer-Approve-Collection.jpeg`.
+ *
+ * Table follows `design/TableDesign.md` (single card module, thumbnail +
+ * two-line item cell, status badge, count + pagination footer). The existing
+ * collection flow is unchanged: `POST /claims/{id}/collect` behind the modal.
+ */
+export default function Collections({ query = "" }: { query?: string }) {
   const { show } = useToast();
   const claims = useAuthedFetch<Claim[]>("/claims?verification_status=Approved");
+  const lost = useAuthedFetch<LostItem[]>("/items/lost");
+  const found = useAuthedFetch<FoundItem[]>("/items/found");
+
+  const [tab, setTab] = useState("ready");
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
 
   const [selected, setSelected] = useState<Claim | null>(null);
   const [collectedBy, setCollectedBy] = useState("");
   const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    setPage(1);
+  }, [query, tab]);
+
   if (claims.loading) return <Loading label="Loading approved claims…" />;
 
-  const list = (claims.data ?? []).filter((c) => c.status === "Active");
+  const approved = claims.data ?? [];
+  const lostTitle = new Map((lost.data ?? []).map((i) => [i.id, i.title]));
+  const foundTitle = new Map((found.data ?? []).map((i) => [i.id, i.title]));
+
+  const counts = countByTab(approved, tabOf);
+  const tabs = TABS.map((t) => ({
+    ...t,
+    count: t.id === "all" ? approved.length : counts[t.id] ?? 0,
+  }));
+
+  const tabbed = tab === "all" ? approved : approved.filter((c) => tabOf(c) === tab);
+  const rows = filterRows(tabbed, query, (c) => [
+    c.id,
+    c.lost_item_id,
+    c.found_item_id,
+    c.user_id,
+    c.verification_status,
+    c.status,
+    lostTitle.get(c.lost_item_id),
+    foundTitle.get(c.found_item_id),
+  ]);
+  const visible = rows.slice((page - 1) * pageSize, page * pageSize);
 
   async function collect() {
     if (!selected) return;
@@ -52,50 +101,83 @@ export default function Collections() {
         <p className="mt-1.5 text-body text-muted">Items with approved claims, ready for pickup.</p>
       </div>
 
-      <Card title="Ready for pickup" meta={`${list.length} approved, active claim(s)`} noPadding>
-        {list.length === 0 ? (
-          <EmptyState message="No approved claims awaiting collection." />
+      <FilterTabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Filter collections" />
+
+      <Card title="Collections" meta={`${approved.length} approved claim(s)`} noPadding>
+        {rows.length === 0 ? (
+          <EmptyState
+            message={query.trim() ? `No collections match “${query.trim()}”.` : "No approved claims in this view."}
+            hint={query.trim() ? "Clear the search or switch back to All." : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="bg-soft text-small font-semibold uppercase tracking-[0.06em] text-muted">
-                  <th className="px-4 py-3">Claim</th>
-                  <th className="px-4 py-3">Claimant</th>
-                  <th className="px-4 py-3">Item pairing</th>
-                  <th className="px-4 py-3">Approved on</th>
-                  <th className="px-4 py-3">Verification</th>
+                  <th className="px-4 py-3">Item</th>
+                  <th className="px-4 py-3">Owner</th>
+                  <th className="px-4 py-3">Claim approved on</th>
+                  <th className="px-4 py-3">ID verification</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line text-small">
-                {list.map((c) => (
-                  <tr key={c.id} className="transition-colors hover:bg-soft">
-                    <td className="px-4 py-3.5 font-semibold text-ink">#{c.id}</td>
-                    <td className="px-4 py-3.5">user #{c.user_id}</td>
-                    <td className="px-4 py-3.5">
-                      Lost #<strong>{c.lost_item_id}</strong> ↔ Found #<strong>{c.found_item_id}</strong>
-                    </td>
-                    <td className="px-4 py-3.5 text-muted">
-                      {new Date(c.claim_date).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <StatusBadge status={c.verification_status} />
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <Button
-                        variant="primary"
-                        onClick={() => { setSelected(c); setCollectedBy(""); setRemarks(""); }}
-                      >
-                        Mark as Collected
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {visible.map((c) => {
+                  const title =
+                    lostTitle.get(c.lost_item_id) ??
+                    foundTitle.get(c.found_item_id) ??
+                    `Lost #${c.lost_item_id} ↔ Found #${c.found_item_id}`;
+                  const collected = c.status === "Completed";
+                  return (
+                    <tr key={c.id} className="transition-colors hover:bg-soft">
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-input bg-soft text-muted">
+                            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                              inventory_2
+                            </span>
+                          </span>
+                          <span>
+                            <span className="block font-semibold text-ink">{title}</span>
+                            <span className="block text-small text-muted">Claim #{c.id}</span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 text-muted">User #{c.user_id}</td>
+                      <td className="px-4 py-3.5 text-muted">
+                        {new Date(c.claim_date).toLocaleDateString(undefined, {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          <StatusBadge status={c.verification_status} />
+                          <StatusIndicator status="Approved" label="" />
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <Button
+                          variant="primary"
+                          disabled={collected}
+                          onClick={() => {
+                            setSelected(c);
+                            setCollectedBy("");
+                            setRemarks("");
+                          }}
+                        >
+                          {collected ? "Already collected" : "Mark as Collected"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
+        <TableFooter page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage} />
       </Card>
 
       <Modal
@@ -115,14 +197,23 @@ export default function Collections() {
           <div className="space-y-4">
             <p className="rounded-input border border-line bg-soft px-3 py-2.5 text-small leading-relaxed text-muted">
               Handing over Lost #<strong className="text-ink">{selected.lost_item_id}</strong> ↔ Found #
-              <strong className="text-ink">{selected.found_item_id}</strong> to user #<strong className="text-ink">{selected.user_id}</strong>.
-              This writes a CollectionRecord and completes the claim.
+              <strong className="text-ink">{selected.found_item_id}</strong> to user #
+              <strong className="text-ink">{selected.user_id}</strong>. This writes a CollectionRecord and
+              completes the claim.
             </p>
             <Field label="Collected by (name)">
-              <TextInput placeholder="e.g. Ada Lovelace" value={collectedBy} onChange={(e) => setCollectedBy(e.target.value)} />
+              <TextInput
+                placeholder="e.g. Ada Lovelace"
+                value={collectedBy}
+                onChange={(e) => setCollectedBy(e.target.value)}
+              />
             </Field>
             <Field label="Remarks (optional)">
-              <TextInput placeholder="Identity verified; item handed over" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              <TextInput
+                placeholder="Identity verified; item handed over"
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+              />
             </Field>
           </div>
         )}

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import { useToast } from "../../components/ui/Toast";
 import StatCard from "../../components/ui/StatCard";
@@ -6,10 +7,21 @@ import StatusBadge from "../../components/ui/StatusBadge";
 import Button from "../../components/ui/Button";
 import EmptyState from "../../components/ui/EmptyState";
 import Loading from "../../components/ui/Loading";
+import FilterTabs from "../../components/ui/FilterTabs";
+import TableFooter from "../../components/ui/TableFooter";
+import { countByTab, filterRows } from "../../lib/filterRows";
 import type { LostItem, FoundItem, Claim } from "../../lib/types";
+
+const TABS = [
+  { id: "all", label: "All" },
+  { id: "Lost", label: "Lost" },
+  { id: "Found", label: "Found" },
+];
 
 interface Props {
   onReport: () => void;
+  /** topbar search value — narrows only this student's fetched rows */
+  query?: string;
 }
 
 interface ActivityRow {
@@ -22,8 +34,15 @@ interface ActivityRow {
 
 /** User dashboard — stat cards + recent activity, mirroring
  *  demo/user/index.html layout, fed by the real scoped list endpoints. */
-export default function UserDashboard({ onReport }: Props) {
+export default function UserDashboard({ onReport, query = "" }: Props) {
   const { show } = useToast();
+  const [tab, setTab] = useState("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, tab]);
   const lost = useAuthedFetch<LostItem[]>("/items/lost");
   const found = useAuthedFetch<FoundItem[]>("/items/found");
   const claims = useAuthedFetch<Claim[]>("/claims");
@@ -47,9 +66,16 @@ export default function UserDashboard({ onReport }: Props) {
   const activity: ActivityRow[] = [
     ...lostItems.map((i) => ({ id: i.id, title: i.title, type: "Lost" as const, status: i.status, date: i.date_lost })),
     ...foundItems.map((i) => ({ id: i.id, title: i.title, type: "Found" as const, status: i.status, date: i.date_found })),
-  ]
-    .sort((a, b) => b.id - a.id)
-    .slice(0, 8);
+  ].sort((a, b) => b.id - a.id);
+
+  const counts = countByTab(activity, (row) => row.type);
+  const tabs = TABS.map((t) => ({
+    ...t,
+    count: t.id === "all" ? activity.length : counts[t.id] ?? 0,
+  }));
+  const tabbed = tab === "all" ? activity : activity.filter((row) => row.type === tab);
+  const rows = filterRows(tabbed, query, (row) => [row.id, row.title, row.status, row.type, row.date]);
+  const visibleRows = rows.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-4">
@@ -72,21 +98,27 @@ export default function UserDashboard({ onReport }: Props) {
 
       <Card
         title="Recent Activity"
-        meta={`${activity.length} recent records`}
-        actions={
-          <Button variant="outline" onClick={() => onReport()}>
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            New Report
-          </Button>
-        }
+        meta={`${activity.length} record${activity.length === 1 ? "" : "s"}`}
+        actions={<FilterTabs tabs={tabs} value={tab} onChange={setTab} variant="card" ariaLabel="Filter activity by type" />}
+        noPadding
       >
-        {activity.length === 0 ? (
+        {rows.length === 0 ? (
           <EmptyState
-            message="No reports yet."
+            message={
+              query.trim()
+                ? `No reports match “${query.trim()}”.`
+                : activity.length === 0
+                  ? "No reports yet."
+                  : "No reports in this view."
+            }
             hint={
-              <button onClick={onReport} className="font-semibold text-amber hover:underline">
-                Report your first lost or found item →
-              </button>
+              query.trim() || activity.length > 0 ? (
+                "Clear the search or switch back to All."
+              ) : (
+                <button onClick={onReport} className="font-semibold text-amber hover:underline">
+                  Report your first lost or found item →
+                </button>
+              )
             }
           />
         ) : (
@@ -102,7 +134,7 @@ export default function UserDashboard({ onReport }: Props) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line text-small">
-                {activity.map((row) => (
+                {visibleRows.map((row) => (
                   <tr key={`${row.type}-${row.id}`} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5">
                       <span className="font-semibold text-ink">{row.title}</span>
@@ -126,6 +158,7 @@ export default function UserDashboard({ onReport }: Props) {
             </table>
           </div>
         )}
+        <TableFooter page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage} />
       </Card>
     </div>
   );

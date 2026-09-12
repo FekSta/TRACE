@@ -1,23 +1,72 @@
+import { useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
 import EmptyState from "../../components/ui/EmptyState";
 import Loading from "../../components/ui/Loading";
+import FilterTabs from "../../components/ui/FilterTabs";
+import SearchInput from "../../components/ui/SearchInput";
+import { countByTab, filterRows } from "../../lib/filterRows";
 import type { Claim } from "../../lib/types";
+
+const TABS = [
+  { id: "all", label: "All" },
+  { id: "review", label: "Under Review" },
+  { id: "approved", label: "Approved" },
+  { id: "recovered", label: "Recovered" },
+  { id: "rejected", label: "Rejected" },
+];
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 }
 
-/** Track claim status — GET /claims (scoped to the caller), showing the
- *  verification and workflow state of every claim the user has submitted. */
-export default function MyClaims() {
+/** Claim stage, derived from real fields only. */
+function tabOf(claim: Claim): string {
+  if (claim.collection_date !== null || claim.status === "Completed") return "recovered";
+  if (claim.verification_status === "Rejected") return "rejected";
+  if (claim.verification_status === "Approved") return "approved";
+  return "review";
+}
+
+/**
+ * Track Claims — search + filter tabs per `design/Track-Claim.jpeg`. The card
+ * layout itself is unchanged (owner decision 2026-09-12: the Track-Claim
+ * stepper design is realised on My Matches instead).
+ *
+ * The search control sits under the page heading here, mirroring the mockup,
+ * rather than in the portal topbar.
+ */
+export default function MyClaims({
+  query = "",
+  onQueryChange,
+}: {
+  query?: string;
+  onQueryChange?: (value: string) => void;
+}) {
   const claims = useAuthedFetch<Claim[]>("/claims");
+  const [tab, setTab] = useState("all");
 
   if (claims.loading) return <Loading label="Loading claims…" />;
 
-  const list = claims.data ?? [];
+  const allClaims = claims.data ?? [];
+  const counts = countByTab(allClaims, tabOf);
+  const tabs = TABS.map((t) => ({
+    ...t,
+    count: t.id === "all" ? allClaims.length : counts[t.id] ?? 0,
+  }));
+
+  const tabbed = tab === "all" ? allClaims : allClaims.filter((c) => tabOf(c) === tab);
+  const list = filterRows(tabbed, query, (c) => [
+    c.id,
+    c.lost_item_id,
+    c.found_item_id,
+    c.status,
+    c.verification_status,
+    c.verification_notes,
+    fmtDate(c.claim_date),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -28,11 +77,34 @@ export default function MyClaims() {
         </p>
       </div>
 
+      <div className="max-w-xl">
+        <SearchInput
+          value={query}
+          onChange={onQueryChange ?? (() => undefined)}
+          ariaLabel="Search your claims"
+          placeholder="Search claims…"
+        />
+      </div>
+
+      <FilterTabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Filter claims by stage" />
+
       {list.length === 0 ? (
         <Card>
           <EmptyState
-            message="No claims submitted yet."
-            hint="Accept one of your matches to submit an ownership claim — it appears here immediately."
+            message={
+              query.trim()
+                ? `No claims match “${query.trim()}”.`
+                : allClaims.length === 0
+                  ? "No claims submitted yet."
+                  : "No claims in this view."
+            }
+            hint={
+              query.trim() || allClaims.length > 0 ? (
+                "Clear the search or switch back to All."
+              ) : (
+                "Accept one of your matches to submit an ownership claim — it appears here immediately."
+              )
+            }
           />
         </Card>
       ) : (
@@ -41,7 +113,9 @@ export default function MyClaims() {
             <Card key={c.id} title={`Claim #${c.id}`} meta={fmtDate(c.claim_date)}>
               <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-input border border-line bg-soft p-3.5">
-                  <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">Item pairing</span>
+                  <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">
+                    Item pairing
+                  </span>
                   <div className="mt-1.5 text-body font-semibold text-ink">
                     Lost #<span className="text-ink">{c.lost_item_id}</span>
                     <span className="mx-1 text-muted">↔</span>
@@ -49,7 +123,9 @@ export default function MyClaims() {
                   </div>
                 </div>
                 <div className="rounded-input border border-line bg-soft p-3.5">
-                  <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">Verification</span>
+                  <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">
+                    Verification
+                  </span>
                   <div className="mt-2">
                     <StatusBadge status={c.verification_status} />
                   </div>
@@ -59,7 +135,11 @@ export default function MyClaims() {
               <ol className="flex items-center gap-2 text-small">
                 {[
                   { label: "Submitted", done: true, date: fmtDate(c.claim_date) },
-                  { label: "Verified", done: c.verification_status !== "Pending", date: c.verification_status !== "Pending" ? "done" : "" },
+                  {
+                    label: "Verified",
+                    done: c.verification_status !== "Pending",
+                    date: c.verification_status !== "Pending" ? "done" : "",
+                  },
                   { label: "Collected", done: c.collection_date !== null, date: fmtDate(c.collection_date) },
                 ].map((step, idx) => (
                   <li key={step.label} className="flex flex-1 items-center gap-2">

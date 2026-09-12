@@ -81,7 +81,8 @@ describe("Categories", () => {
       return { ok: true, status: 200, text: async () => JSON.stringify({}) };
     });
     renderWithProviders(<Categories />);
-    expect(await screen.findByText("No categories yet.")).toBeInTheDocument();
+    // Empty copy changed with the All / Active / Archived filter tabs.
+    expect(await screen.findByText("No categories in this view.")).toBeInTheDocument();
   });
 
   it("opens create modal when 'Add Category' is clicked", async () => {
