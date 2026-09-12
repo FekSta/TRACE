@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import { useToast } from "../../components/ui/Toast";
 import { api, ApiError } from "../../lib/api";
@@ -9,11 +9,19 @@ import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
 import { Field, TextInput } from "../../components/ui/Field";
 import TableFooter from "../../components/ui/TableFooter";
+import FilterTabs from "../../components/ui/FilterTabs";
+import { countByTab, filterRows } from "../../lib/filterRows";
 import type { Category } from "../../lib/types";
+
+const TABS = [
+  { id: "all", label: "All" },
+  { id: "Active", label: "Active" },
+  { id: "Archived", label: "Archived" },
+];
 
 /** Manage categories — the only Admin view with full CRUD backing this pass
  *  (GET/POST/PATCH/DELETE /categories). */
-export default function Categories() {
+export default function Categories({ query = "" }: { query?: string }) {
   const { show } = useToast();
   const categories = useAuthedFetch<Category[]>("/categories?include_archived=true");
 
@@ -22,10 +30,23 @@ export default function Categories() {
   const [form, setForm] = useState({ category_name: "", description: "", icon: "", display_order: "" });
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
+  const [tab, setTab] = useState("all");
 
   const list = categories.data ?? [];
   const pageSize = 5;
-  const visibleCategories = list.slice((page - 1) * pageSize, page * pageSize);
+
+  const counts = countByTab(list, (c) => c.status);
+  const tabs = TABS.map((t) => ({
+    ...t,
+    count: t.id === "all" ? list.length : counts[t.id] ?? 0,
+  }));
+  const tabbed = tab === "all" ? list : list.filter((c) => c.status === tab);
+  const rows = filterRows(tabbed, query, (c) => [c.category_name, c.description, c.icon, c.status]);
+  const visibleCategories = rows.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, tab]);
 
   function openCreate() {
     setForm({ category_name: "", description: "", icon: "", display_order: "" });
@@ -127,9 +148,17 @@ export default function Categories() {
         </Button>
       </div>
 
-      <Card title="Categories" meta={`${list.length} total (archived included)`} noPadding>
-        {list.length === 0 ? (
-          <EmptyState message="No categories yet." />
+      <Card
+        title="Categories"
+        meta={`${list.length} total (archived included)`}
+        actions={<FilterTabs tabs={tabs} value={tab} onChange={setTab} variant="card" ariaLabel="Filter categories by status" />}
+        noPadding
+      >
+        {rows.length === 0 ? (
+          <EmptyState
+            message={query.trim() ? `No categories match “${query.trim()}”.` : "No categories in this view."}
+            hint={query.trim() ? "Clear the search or switch back to All." : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
@@ -173,7 +202,7 @@ export default function Categories() {
             </table>
           </div>
         )}
-        <TableFooter page={page} pageSize={pageSize} total={list.length} onPageChange={setPage} />
+        <TableFooter page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage} />
       </Card>
 
       {/* Create / edit modal */}

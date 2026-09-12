@@ -1,10 +1,11 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
 import EmptyState from "../../components/ui/EmptyState";
 import TableFooter from "../../components/ui/TableFooter";
+import { filterRows } from "../../lib/filterRows";
 import { Field, Select, TextInput } from "../../components/ui/Field";
 import {
   REPORTS,
@@ -167,7 +168,7 @@ function RowDetail({ columns, row }: { columns: ReportColumn[]; row: ReportRow }
   );
 }
 
-export default function Reports() {
+export default function Reports({ query = "" }: { query?: string }) {
   const [reportType, setReportType] = useState<ReportTypeId>("users");
   const [draft, setDraft] = useState<FilterState>(() => defaultFilters("users"));
   const [applied, setApplied] = useState<FilterState>(() => defaultFilters("users"));
@@ -188,9 +189,17 @@ export default function Reports() {
   );
 
   const rows = report.data?.rows ?? [];
+  // Client-side narrowing of the rows already returned for the active
+  // report type — the server-side filters/sorts above are untouched.
+  const searchedRows = filterRows(rows, query, (row) => Object.values(row));
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const visibleRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const visibleRows = searchedRows.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+    setExpandedId(null);
+  }, [query, reportType]);
   const categoryOptions = categories.data ?? [];
   const userOptions = users.data?.rows ?? [];
   const officerOptions = officers.data?.rows ?? [];
@@ -316,10 +325,16 @@ export default function Reports() {
             <tbody className="divide-y divide-line text-small">
               {report.loading ? (
                 <SkeletonRows columns={config.columns.length} />
-              ) : rows.length === 0 ? (
+              ) : searchedRows.length === 0 ? (
                 <tr>
                   <td colSpan={config.columns.length}>
-                    <EmptyState message={config.emptyMessage} />
+                    <EmptyState
+                      message={
+                        query.trim()
+                          ? `No rows match “${query.trim()}”.`
+                          : config.emptyMessage
+                      }
+                    />
                   </td>
                 </tr>
               ) : (
@@ -361,7 +376,7 @@ export default function Reports() {
             </tbody>
           </table>
         </div>
-        <TableFooter page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage} />
+        <TableFooter page={page} pageSize={pageSize} total={searchedRows.length} onPageChange={setPage} />
       </Card>
 
       <StatusLegend />

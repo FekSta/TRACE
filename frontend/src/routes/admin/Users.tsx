@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import { useToast } from "../../components/ui/Toast";
 import { api, ApiError } from "../../lib/api";
@@ -9,7 +9,16 @@ import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
 import { Field, Select, TextInput } from "../../components/ui/Field";
 import TableFooter from "../../components/ui/TableFooter";
+import FilterTabs from "../../components/ui/FilterTabs";
+import { countByTab, filterRows } from "../../lib/filterRows";
 import type { ManagedUser } from "../../lib/types";
+
+const TABS = [
+  { id: "all", label: "All" },
+  { id: "Active", label: "Active" },
+  { id: "Suspended", label: "Suspended" },
+  { id: "Inactive", label: "Inactive" },
+];
 
 type FormState = {
   first_name: string;
@@ -33,7 +42,7 @@ const EMPTY: FormState = {
   password: "",
 };
 
-export default function Users() {
+export default function Users({ query = "" }: { query?: string }) {
   const { show } = useToast();
   const users = useAuthedFetch<ManagedUser[]>("/admin/users");
   const [editing, setEditing] = useState<ManagedUser | null>(null);
@@ -41,9 +50,29 @@ export default function Users() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
+  const [tab, setTab] = useState("all");
   const list = users.data ?? [];
   const pageSize = 5;
-  const visibleUsers = list.slice((page - 1) * pageSize, page * pageSize);
+
+  const counts = countByTab(list, (user) => user.status);
+  const tabs = TABS.map((t) => ({
+    ...t,
+    count: t.id === "all" ? list.length : counts[t.id] ?? 0,
+  }));
+  const tabbed = tab === "all" ? list : list.filter((user) => user.status === tab);
+  const rows = filterRows(tabbed, query, (user) => [
+    user.first_name,
+    user.last_name,
+    user.email,
+    user.student_number,
+    user.role,
+    user.status,
+  ]);
+  const visibleUsers = rows.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, tab]);
 
   function openCreate() {
     setForm(EMPTY);
@@ -129,11 +158,19 @@ export default function Users() {
         </Button>
       </div>
 
-      <Card title="Accounts" meta={`${list.length} managed account${list.length === 1 ? "" : "s"}`} noPadding>
+      <Card
+        title="Accounts"
+        meta={`${list.length} managed account${list.length === 1 ? "" : "s"}`}
+        actions={<FilterTabs tabs={tabs} value={tab} onChange={setTab} variant="card" ariaLabel="Filter accounts by status" />}
+        noPadding
+      >
         {users.errorStatus !== null ? (
           <EmptyState message={users.error ?? "Could not load accounts."} hint="Check that the backend is running and you are signed in as an Administrator." />
-        ) : list.length === 0 ? (
-          <EmptyState message="No User or Officer accounts yet." />
+        ) : rows.length === 0 ? (
+          <EmptyState
+            message={query.trim() ? `No accounts match “${query.trim()}”.` : "No accounts in this view."}
+            hint={query.trim() ? "Clear the search or switch back to All." : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
@@ -165,7 +202,7 @@ export default function Users() {
             </table>
           </div>
         )}
-        <TableFooter page={page} pageSize={pageSize} total={list.length} onPageChange={setPage} />
+        <TableFooter page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage} />
       </Card>
 
       <Modal open={creating || editing !== null} title={editing ? `Edit account #${editing.id}` : "Add account"} onClose={closeForm} footer={
