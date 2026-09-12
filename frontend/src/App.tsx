@@ -19,9 +19,6 @@ import AdminPortal from "./routes/admin/AdminPortal";
  * route does not exist in production. It is linked from nowhere (direct URL
  * only) and needs no session.
  */
-const DesignSystem = import.meta.env.DEV
-  ? lazy(() => import("./routes/design/DesignSystem"))
-  : null;
 
 /** "/" and unknown paths resolve to the session's own portal (or /login). */
 function RootRedirect() {
@@ -68,18 +65,6 @@ export default function App() {
                 </RequireRole>
               }
             />
-
-            {/* Dev-only design system reference — absent from production */}
-            {DesignSystem && (
-              <Route
-                path="/design"
-                element={
-                  <Suspense fallback={null}>
-                    <DesignSystem />
-                  </Suspense>
-                }
-              />
-            )}
 
             <Route path="/" element={<RootRedirect />} />
             <Route path="*" element={<RootRedirect />} />
