@@ -4,6 +4,7 @@ import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
 import EmptyState from "../../components/ui/EmptyState";
+import TableFooter from "../../components/ui/TableFooter";
 import { Field, Select, TextInput } from "../../components/ui/Field";
 import {
   REPORTS,
@@ -187,6 +188,9 @@ export default function Reports() {
   );
 
   const rows = report.data?.rows ?? [];
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const visibleRows = rows.slice((page - 1) * pageSize, page * pageSize);
   const categoryOptions = categories.data ?? [];
   const userOptions = users.data?.rows ?? [];
   const officerOptions = officers.data?.rows ?? [];
@@ -199,6 +203,7 @@ export default function Reports() {
     setDraft(reset);
     setApplied(reset);
     setExpandedId(null);
+    setPage(1);
   }
 
   function generate() {
@@ -206,6 +211,7 @@ export default function Reports() {
     const unchanged = nextPath === path;
     setApplied({ ...draft });
     setExpandedId(null);
+    setPage(1);
     // Re-running the same query still refreshes the grid + timestamp.
     if (unchanged) report.reload();
   }
@@ -215,6 +221,7 @@ export default function Reports() {
     setDraft(reset);
     setApplied(reset);
     setExpandedId(null);
+    setPage(1);
   }
 
   function exportCsv() {
@@ -316,7 +323,7 @@ export default function Reports() {
                   </td>
                 </tr>
               ) : (
-                rows.map((row, index) => {
+                visibleRows.map((row, index) => {
                   const rowId = String(row.id ?? index);
                   const expanded = expandedId === rowId;
                   return (
@@ -354,6 +361,7 @@ export default function Reports() {
             </tbody>
           </table>
         </div>
+        <TableFooter page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage} />
       </Card>
 
       <StatusLegend />

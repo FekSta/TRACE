@@ -8,6 +8,7 @@ import StatusBadge from "../../components/ui/StatusBadge";
 import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
 import { Field, Select, TextInput } from "../../components/ui/Field";
+import TableFooter from "../../components/ui/TableFooter";
 import type { ManagedUser } from "../../lib/types";
 
 type FormState = {
@@ -39,7 +40,10 @@ export default function Users() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
   const list = users.data ?? [];
+  const pageSize = 5;
+  const visibleUsers = list.slice((page - 1) * pageSize, page * pageSize);
 
   function openCreate() {
     setForm(EMPTY);
@@ -143,7 +147,7 @@ export default function Users() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line text-small">
-                {list.map((user) => (
+                {visibleUsers.map((user) => (
                   <tr key={user.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">{user.first_name} {user.last_name}</td>
                     <td className="px-4 py-3.5 text-muted">{user.email}</td>
@@ -161,6 +165,7 @@ export default function Users() {
             </table>
           </div>
         )}
+        <TableFooter page={page} pageSize={pageSize} total={list.length} onPageChange={setPage} />
       </Card>
 
       <Modal open={creating || editing !== null} title={editing ? `Edit account #${editing.id}` : "Add account"} onClose={closeForm} footer={

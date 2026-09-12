@@ -2,6 +2,8 @@ import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import Card from "../../components/ui/Card";
 import EmptyState from "../../components/ui/EmptyState";
 import Loading from "../../components/ui/Loading";
+import TableFooter from "../../components/ui/TableFooter";
+import { useState } from "react";
 import type { AuditLogEntry } from "../../lib/types";
 
 /**
@@ -14,6 +16,7 @@ import type { AuditLogEntry } from "../../lib/types";
  */
 export default function AuditLog() {
   const audit = useAuthedFetch<AuditLogEntry[]>("/audit-logs");
+  const [page, setPage] = useState(1);
 
   if (audit.loading) return <Loading label="Loading audit log…" />;
 
@@ -21,6 +24,8 @@ export default function AuditLog() {
   // handoff); any other error is a real connectivity failure.
   const gap = audit.errorStatus === 404;
   const entries = audit.data ?? [];
+  const pageSize = 10;
+  const visibleEntries = entries.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-4">
@@ -67,7 +72,7 @@ export default function AuditLog() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line text-small">
-                {entries.map((e) => (
+                {visibleEntries.map((e) => (
                   <tr key={e.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">{e.action}</td>
                     <td className="px-4 py-3.5">
@@ -81,6 +86,7 @@ export default function AuditLog() {
               </tbody>
             </table>
           </div>
+          <TableFooter page={page} pageSize={pageSize} total={entries.length} onPageChange={setPage} />
         </Card>
       )}
     </div>

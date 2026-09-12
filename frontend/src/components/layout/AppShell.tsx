@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useAuth } from "../../lib/auth-context";
 
 export interface NavItem {
@@ -25,6 +26,7 @@ interface Props {
  */
 export default function AppShell({ portalTitle, nav, active, onNavigate, children, search }: Props) {
   const { session, logout } = useAuth();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const firstName = session?.payload?.FirstName?.trim() ?? "";
   const lastName = session?.payload?.LastName?.trim() ?? "";
@@ -37,10 +39,15 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
       .slice(0, 2)
       .toUpperCase() || session?.payload?.Role?.slice(0, 2).toUpperCase() || "TR";
 
+  function navigate(id: string) {
+    onNavigate(id);
+    setMobileNavOpen(false);
+  }
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-20 flex w-[260px] flex-col border-r border-line bg-surface px-4 pb-5 pt-7">
+      <aside className={`fixed inset-y-0 left-0 z-30 flex w-[260px] flex-col border-r border-line bg-surface px-4 pb-5 pt-7 transition-transform duration-200 lg:translate-x-0 ${mobileNavOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="mb-6 flex items-center gap-2.5 px-2.5">
           <span className="material-symbols-outlined text-[32px] text-ink">radar</span>
           <div>
@@ -53,7 +60,7 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
           {nav.map((item) => (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)}
+              onClick={() => navigate(item.id)}
               aria-current={active === item.id ? "page" : undefined}
               className={`flex items-center gap-3 rounded-full px-3.5 py-3 text-left text-body font-semibold transition-colors duration-150 ${
                 active === item.id ? "bg-ink text-white" : "text-muted hover:bg-nav-hover hover:text-ink"
@@ -88,13 +95,30 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
       </aside>
 
       {/* Main column */}
-      <div className="min-h-screen">
-        <header className="sticky top-0 z-10 flex h-[72px] items-center justify-between gap-5 border-b border-line bg-surface px-7">
-          <div className="min-w-[220px]">
+      {mobileNavOpen && (
+        <button
+          aria-label="Close navigation"
+          className="fixed inset-0 z-20 bg-ink/20 lg:hidden"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      <div className="min-h-screen lg:ml-[260px]">
+        <header className="sticky top-0 z-10 flex min-h-[72px] items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6 lg:px-7">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              aria-label="Open navigation"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-input text-muted hover:bg-soft hover:text-ink lg:hidden"
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <span className="material-symbols-outlined">menu</span>
+            </button>
+            <div className="min-w-0">
             <span className="block text-small font-bold uppercase tracking-[0.12em] text-amber">TRACE</span>
-            <h2 className="mt-0.5 font-display text-h2 text-ink">
+            <h2 className="mt-0.5 truncate font-display text-h2 text-ink">
               {nav.find((n) => n.id === active)?.label ?? "Dashboard"}
             </h2>
+            </div>
           </div>
           {search && <div className="hidden md:block">{search}</div>}
           <div className="flex items-center gap-1.5">
@@ -110,7 +134,7 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1450px] p-7">{children}</main>
+        <main className="mx-auto max-w-[1450px] p-4 sm:p-6 lg:p-7">{children}</main>
       </div>
     </div>
   );

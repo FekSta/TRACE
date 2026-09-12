@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useAuthedFetch } from "../../hooks/useAuthedFetch";
 import StatCard from "../../components/ui/StatCard";
 import Card from "../../components/ui/Card";
 import StatusBadge from "../../components/ui/StatusBadge";
 import Loading from "../../components/ui/Loading";
 import EmptyState from "../../components/ui/EmptyState";
+import TableFooter from "../../components/ui/TableFooter";
 import type { LostItem, FoundItem, Claim, Match, Category } from "../../lib/types";
 
 /**
@@ -16,6 +18,7 @@ import type { LostItem, FoundItem, Claim, Match, Category } from "../../lib/type
  * Dashboard module endpoints remain the Module 8 handoff (Review.md §7).
  */
 export default function AdminDashboard() {
+  const [page, setPage] = useState(1);
   const lost = useAuthedFetch<LostItem[]>("/items/lost");
   const found = useAuthedFetch<FoundItem[]>("/items/found");
   const claims = useAuthedFetch<Claim[]>("/claims");
@@ -33,6 +36,8 @@ export default function AdminDashboard() {
   const openClaims = allClaims.filter((c) => c.status === "Active").length;
   const suggestedMatches = allMatches.filter((m) => m.status === "Suggested").length;
   const recovered = foundItems.filter((f) => f.status === "Returned").length;
+  const pageSize = 5;
+  const visibleClaims = allClaims.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="space-y-4">
@@ -68,7 +73,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line text-small">
-                {allClaims.map((c) => (
+                {visibleClaims.map((c) => (
                   <tr key={c.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">#{c.id}</td>
                     <td className="px-4 py-3.5">user #{c.user_id}</td>
@@ -88,6 +93,7 @@ export default function AdminDashboard() {
             </table>
           </div>
         )}
+        <TableFooter page={page} pageSize={pageSize} total={allClaims.length} onPageChange={setPage} />
       </Card>
     </div>
   );

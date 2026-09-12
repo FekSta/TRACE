@@ -8,6 +8,7 @@ import StatusBadge from "../../components/ui/StatusBadge";
 import Modal from "../../components/ui/Modal";
 import EmptyState from "../../components/ui/EmptyState";
 import { Field, TextInput } from "../../components/ui/Field";
+import TableFooter from "../../components/ui/TableFooter";
 import type { Category } from "../../lib/types";
 
 /** Manage categories — the only Admin view with full CRUD backing this pass
@@ -20,8 +21,11 @@ export default function Categories() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ category_name: "", description: "", icon: "", display_order: "" });
   const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(1);
 
   const list = categories.data ?? [];
+  const pageSize = 5;
+  const visibleCategories = list.slice((page - 1) * pageSize, page * pageSize);
 
   function openCreate() {
     setForm({ category_name: "", description: "", icon: "", display_order: "" });
@@ -140,7 +144,7 @@ export default function Categories() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line text-small">
-                {list.map((c) => (
+                {visibleCategories.map((c) => (
                   <tr key={c.id} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5 font-semibold text-ink">{c.category_name}</td>
                     <td className="max-w-[260px] truncate px-4 py-3.5 text-muted">{c.description ?? "—"}</td>
@@ -169,6 +173,7 @@ export default function Categories() {
             </table>
           </div>
         )}
+        <TableFooter page={page} pageSize={pageSize} total={list.length} onPageChange={setPage} />
       </Card>
 
       {/* Create / edit modal */}
