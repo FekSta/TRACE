@@ -104,7 +104,8 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
       )}
 
       <div className="min-h-screen lg:ml-[260px]">
-        <header className="sticky top-0 z-10 flex min-h-[72px] items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6 lg:px-7">
+        <header className="sticky top-0 z-10 border-b border-line bg-surface px-4 py-3 sm:px-6 lg:px-7">
+          <div className="flex min-h-[48px] items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <button
               aria-label="Open navigation"
@@ -120,7 +121,7 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
             </h2>
             </div>
           </div>
-          {search && <div className="hidden md:block">{search}</div>}
+          {search && <div className="mx-auto hidden min-w-0 max-w-xl flex-1 px-4 md:block">{search}</div>}
           <div className="flex items-center gap-1.5">
             <button
               className="grid h-[38px] w-[38px] place-items-center rounded-full text-muted hover:bg-soft hover:text-ink"
@@ -132,6 +133,8 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
               {initials}
             </div>
           </div>
+          </div>
+          {search && <div className="mt-2 md:hidden">{search}</div>}
         </header>
 
         <main className="mx-auto max-w-[1450px] p-4 sm:p-6 lg:p-7">{children}</main>
