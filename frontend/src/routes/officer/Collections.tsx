@@ -84,7 +84,7 @@ export default function Collections({ query = "" }: { query?: string }) {
         collected_by: collectedBy || null,
         remarks: remarks || null,
       });
-      show(`Claim #${selected.id} collected — item handed over.`);
+      show("Claim collected — item handed over.");
       setSelected(null);
       claims.reload();
     } catch (err) {
@@ -124,9 +124,11 @@ export default function Collections({ query = "" }: { query?: string }) {
               <tbody className="divide-y divide-line text-small">
                 {visible.map((c) => {
                   const title =
+                    c.lost_item_title ??
                     lostTitle.get(c.lost_item_id) ??
+                    c.found_item_title ??
                     foundTitle.get(c.found_item_id) ??
-                    `Lost #${c.lost_item_id} ↔ Found #${c.found_item_id}`;
+                    "Item pairing";
                   const collected = c.status === "Completed";
                   return (
                     <tr key={c.id} className="transition-colors hover:bg-soft">
@@ -137,13 +139,10 @@ export default function Collections({ query = "" }: { query?: string }) {
                               inventory_2
                             </span>
                           </span>
-                          <span>
-                            <span className="block font-semibold text-ink">{title}</span>
-                            <span className="block text-small text-muted">Claim #{c.id}</span>
-                          </span>
+                          <span className="block font-semibold text-ink">{title}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-muted">User #{c.user_id}</td>
+                      <td className="px-4 py-3.5 text-muted">{c.claimant_name ?? "—"}</td>
                       <td className="px-4 py-3.5 text-muted">
                         {new Date(c.claim_date).toLocaleDateString(undefined, {
                           day: "numeric",
@@ -182,7 +181,7 @@ export default function Collections({ query = "" }: { query?: string }) {
 
       <Modal
         open={selected !== null}
-        title={`Collect claim #${selected?.id ?? ""}`}
+        title="Collect claim"
         onClose={() => setSelected(null)}
         footer={
           <>
@@ -196,10 +195,10 @@ export default function Collections({ query = "" }: { query?: string }) {
         {selected && (
           <div className="space-y-4">
             <p className="rounded-input border border-line bg-soft px-3 py-2.5 text-small leading-relaxed text-muted">
-              Handing over Lost #<strong className="text-ink">{selected.lost_item_id}</strong> ↔ Found #
-              <strong className="text-ink">{selected.found_item_id}</strong> to user #
-              <strong className="text-ink">{selected.user_id}</strong>. This writes a CollectionRecord and
-              completes the claim.
+              Handing over “<strong className="text-ink">{selected.lost_item_title ?? "the lost item"}</strong>”
+              ↔ “<strong className="text-ink">{selected.found_item_title ?? "the found item"}</strong>” to{" "}
+              <strong className="text-ink">{selected.claimant_name ?? "the claimant"}</strong>. This writes a
+              CollectionRecord and completes the claim.
             </p>
             <Field label="Collected by (name)">
               <TextInput

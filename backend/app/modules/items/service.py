@@ -10,6 +10,7 @@ every endpoint (CRUD + attachment upload) applies them identically:
 """
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Category, User
@@ -21,6 +22,36 @@ _STAFF_ROLES = (UserRole.OFFICER, UserRole.ADMINISTRATOR)
 def is_staff(user: User) -> bool:
     """Officer/Administrator see all rows; plain Users are scoped to their own."""
     return user.role in _STAFF_ROLES
+
+
+def load_category_names(db: Session, category_ids: set[int]) -> dict[int, str]:
+    """Batch-resolve ``category id -> name`` in one query.
+
+    Categories are readable by every role, so this is not scope-sensitive —
+    it exists so item responses can carry a human category label instead of a
+    raw `category_id` (Notes.md §9.9).
+    """
+    if not category_ids:
+        return {}
+    rows = db.execute(
+        select(Category.id, Category.category_name).where(Category.id.in_(category_ids))
+    ).all()
+    return {category_id: name for category_id, name in rows}
+
+
+def load_reporter_names(db: Session, user_ids: set[int]) -> dict[int, str]:
+    """Batch-resolve ``user id -> "First Last"`` in a single query.
+
+    Slice A display enrichment for staff callers only. This lives in the Items
+    module because Items owns the response it decorates — there is deliberately
+    no shared cross-module user-directory helper, and no public ``GET /users``.
+    """
+    if not user_ids:
+        return {}
+    rows = db.execute(
+        select(User.id, User.first_name, User.last_name).where(User.id.in_(user_ids))
+    ).all()
+    return {user_id: f"{first} {last}".strip() for user_id, first, last in rows}
 
 
 def get_scoped(db: Session, model: type, item_id: int, user: User):

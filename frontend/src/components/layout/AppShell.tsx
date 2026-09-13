@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { useAuth } from "../../lib/auth-context";
+import ProfileModal from "../profile/ProfileModal";
 
 export interface NavItem {
   id: string;
@@ -27,6 +28,7 @@ interface Props {
 export default function AppShell({ portalTitle, nav, active, onNavigate, children, search }: Props) {
   const { session, logout } = useAuth();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const firstName = session?.payload?.FirstName?.trim() ?? "";
   const lastName = session?.payload?.LastName?.trim() ?? "";
@@ -84,6 +86,13 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
           </div>
           <div className="mt-3.5 flex gap-1.5">
             <button
+              onClick={() => setProfileOpen(true)}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-input px-2 py-2 text-small text-muted hover:bg-soft hover:text-ink"
+            >
+              <span className="material-symbols-outlined text-[16px]">person</span>
+              Profile
+            </button>
+            <button
               onClick={logout}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-input px-2 py-2 text-small text-muted hover:bg-soft hover:text-ink"
             >
@@ -139,6 +148,8 @@ export default function AppShell({ portalTitle, nav, active, onNavigate, childre
 
         <main className="mx-auto max-w-[1450px] p-4 sm:p-6 lg:p-7">{children}</main>
       </div>
+
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

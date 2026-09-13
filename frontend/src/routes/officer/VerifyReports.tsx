@@ -99,7 +99,7 @@ export default function VerifyReports({ query = "" }: { query?: string }) {
     setBusy(true);
     try {
       await api.patch(`/items/${selected.kind}/${selected.id}`, { status });
-      show(`Report #${selected.id} status → ${status}`);
+      show(`“${selected.title}” status → ${status}`);
       setSelected(null);
       lost.reload();
       found.reload();
@@ -111,10 +111,10 @@ export default function VerifyReports({ query = "" }: { query?: string }) {
   }
 
   async function reject(item: AnyItem) {
-    if (!window.confirm(`Reject and delete report #${item.id}? This cannot be undone.`)) return;
+    if (!window.confirm(`Reject and delete “${item.title}”? This cannot be undone.`)) return;
     try {
       await api.delete(`/items/${item.kind}/${item.id}`);
-      show(`Report #${item.id} removed.`);
+      show(`“${item.title}” removed.`);
       lost.reload();
       found.reload();
     } catch (err) {
@@ -157,7 +157,7 @@ export default function VerifyReports({ query = "" }: { query?: string }) {
 
                 <h3 className="mt-3.5 font-display text-h3 text-ink">{row.title}</h3>
                 <p className="mt-0.5 text-small text-muted">
-                  Category #{row.category_id} · {row.kind === "lost" ? "Lost" : "Found"} report #{row.id}
+                  {row.category_name ?? "Uncategorised"} · {row.kind === "lost" ? "Lost" : "Found"} report
                 </p>
 
                 <p className={`mt-3 text-body leading-relaxed text-muted ${isOpen ? "" : "line-clamp-2"}`}>
@@ -187,7 +187,7 @@ export default function VerifyReports({ query = "" }: { query?: string }) {
                 </div>
 
                 <p className="mt-3 text-small text-muted">
-                  By User #{row.user_id}
+                  By {row.reporter_name ?? "the reporter"}
                   {" · "}
                   {dateOf(row) ? `Reported ${dateOf(row)}` : "Date not recorded"}
                 </p>
@@ -211,7 +211,7 @@ export default function VerifyReports({ query = "" }: { query?: string }) {
 
       <Modal
         open={selected !== null}
-        title={`Update status — report #${selected?.id ?? ""}`}
+        title={`Update status — ${selected?.title ?? ""}`}
         onClose={() => setSelected(null)}
         footer={
           <>

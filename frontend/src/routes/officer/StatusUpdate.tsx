@@ -27,6 +27,7 @@ interface Row {
   title: string;
   status: string;
   location: string | null;
+  reporterName: string | null;
   categoryId: number;
   date: string | null;
 }
@@ -82,6 +83,7 @@ export default function StatusUpdate({ query = "" }: { query?: string }) {
       title: i.title,
       status: i.status,
       location: i.location_lost,
+      reporterName: i.reporter_name,
       categoryId: i.category_id,
       date: i.date_lost,
     })),
@@ -91,6 +93,7 @@ export default function StatusUpdate({ query = "" }: { query?: string }) {
       title: i.title,
       status: i.status,
       location: i.storage_location,
+      reporterName: i.reporter_name,
       categoryId: i.category_id,
       date: i.date_found,
     })),
@@ -120,7 +123,7 @@ export default function StatusUpdate({ query = "" }: { query?: string }) {
     if (status === row.status) return;
     try {
       await api.patch(`/items/${row.kind}/${row.id}`, { status });
-      show(`Item #${row.id} status → ${status}`);
+      show(`“${row.title}” status → ${status}`);
       lost.reload();
       found.reload();
     } catch (err) {
@@ -183,12 +186,12 @@ export default function StatusUpdate({ query = "" }: { query?: string }) {
                         <span>
                           <span className="block font-semibold text-ink">{row.title}</span>
                           <span className="block text-small text-muted">
-                            ID: #{row.kind === "lost" ? "L" : "F"}-{row.id}
+                            Reported by {row.reporterName ?? "—"}
                           </span>
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-muted">{categoryName.get(row.categoryId) ?? `#${row.categoryId}`}</td>
+                    <td className="px-4 py-3.5 text-muted">{categoryName.get(row.categoryId) ?? "Uncategorised"}</td>
                     <td className="px-4 py-3.5">
                       <StatusBadge status={row.status} />
                     </td>

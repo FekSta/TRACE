@@ -20,7 +20,13 @@ from app.modules.claims.schemas import (
     ClaimResponse,
     ClaimVerifyRequest,
 )
-from app.modules.claims.service import collect_claim, get_scoped_claim, verify_claim
+from app.modules.claims.service import (
+    collect_claim,
+    get_scoped_claim,
+    load_item_titles,
+    load_user_names,
+    verify_claim,
+)
 from app.modules.items.service import is_staff
 from app.modules.notifications.service import notify_claim_verified
 
@@ -40,7 +46,8 @@ def list_claims(
         q = q.where(Claim.user_id == current_user.id)
     if verification_status is not None:
         q = q.where(Claim.verification_status == verification_status)
-    return list(db.scalars(q).all())
+    claims = list(db.scalars(q).all())
+    return _enrich_claims(db, claims, current_user)
 
 
 @router.get("/claims/{claim_id}", response_model=ClaimResponse)
@@ -50,7 +57,47 @@ def get_claim(
     db: Session = Depends(get_db),
 ) -> Claim:
     """Get one claim — 404 for cross-user access attempts."""
-    return get_scoped_claim(db, claim_id, current_user)
+    claim = get_scoped_claim(db, claim_id, current_user)
+    return _enrich_claims(db, [claim], current_user)[0]
+
+
+def _enrich_claims(db: Session, claims: list[Claim], current_user: User) -> list[ClaimResponse]:
+    """Decorate claim responses with names/titles instead of raw IDs.
+
+    - `lost_item_title` / `found_item_title`: every caller who can see the
+      claim (the pairing is the point of a claim).
+    - `claimant_name`: staff on any claim, a plain `User` only on their own.
+    - `officer_name`: staff only (never expose the reviewer to a claimant).
+
+    One batched query per lookup, never one per row (Notes.md §11.8).
+    """
+    if not claims:
+        return claims
+    staff = is_staff(current_user)
+    lost_titles, found_titles = load_item_titles(
+        db, {c.lost_item_id for c in claims}, {c.found_item_id for c in claims}
+    )
+    if staff:
+        user_ids = {c.user_id for c in claims}
+        user_ids.update(c.officer_id for c in claims if c.officer_id is not None)
+    else:
+        user_ids = {c.user_id for c in claims if c.user_id == current_user.id}
+    names = load_user_names(db, user_ids)
+    return [
+        ClaimResponse.model_validate(claim).model_copy(
+            update={
+                "lost_item_title": lost_titles.get(claim.lost_item_id),
+                "found_item_title": found_titles.get(claim.found_item_id),
+                "claimant_name": names.get(claim.user_id)
+                if (staff or claim.user_id == current_user.id)
+                else None,
+                "officer_name": names.get(claim.officer_id)
+                if (staff and claim.officer_id is not None)
+                else None,
+            }
+        )
+        for claim in claims
+    ]
 
 
 def _get_claim_or_404(db: Session, claim_id: int) -> Claim:
@@ -100,7 +147,7 @@ def verify_claim_endpoint(
     db.commit()
     db.refresh(claim)
     background_tasks.add_task(notify_claim_verified, claim.id)
-    return claim
+    return _enrich_claims(db, [claim], current_user)[0]
 
 
 @router.post("/claims/{claim_id}/collect", response_model=ClaimResponse)
@@ -132,4 +179,4 @@ def collect_claim_endpoint(
     )
     db.commit()
     db.refresh(claim)
-    return claim
+    return _enrich_claims(db, [claim], current_user)[0]

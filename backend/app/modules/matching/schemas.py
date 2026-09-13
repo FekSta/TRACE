@@ -20,5 +20,13 @@ class MatchResponse(BaseModel):
     match_reason: str | None
     status: MatchStatus
     generated_at: datetime
+    # Display enrichment (Slice A): item titles are safe for every caller who
+    # can see the match (the pairing is the point of a match); reporter names
+    # are staff-only, so a plain User never sees another user's identity
+    # (Notes.md §10.8).
+    lost_item_title: str | None = None
+    found_item_title: str | None = None
+    lost_reporter_name: str | None = None
+    found_reporter_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -38,6 +38,10 @@ const pendingClaim = {
   verification_notes: null,
   collection_date: null,
   status: "Active",
+  lost_item_title: "Black Leather Wallet",
+  found_item_title: "Toyota Car Keys",
+  claimant_name: "Ada Lovelace",
+  officer_name: null,
 };
 
 beforeEach(() => {
@@ -66,7 +70,7 @@ describe("ReviewClaims", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     renderWithProviders(<ReviewClaims />);
-    expect(await screen.findByText("Claim #1")).toBeInTheDocument();
+    expect(await screen.findByText("Ownership claim")).toBeInTheDocument();
     expect(screen.getByText("Review Claims")).toBeInTheDocument();
   });
 
@@ -97,11 +101,11 @@ describe("ReviewClaims", () => {
     const user = userEvent.setup();
 
     renderWithProviders(<ReviewClaims />);
-    await screen.findByText("Claim #1");
+    await screen.findByText("Ownership claim");
 
     await user.click(screen.getByRole("button", { name: "Approve Claim" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText(/Approve claim #1/)).toBeInTheDocument();
+    expect(screen.getByText("Approve claim")).toBeInTheDocument();
   });
 
   it("opens reject modal when 'Reject Claim' is clicked", async () => {
@@ -116,11 +120,11 @@ describe("ReviewClaims", () => {
     const user = userEvent.setup();
 
     renderWithProviders(<ReviewClaims />);
-    await screen.findByText("Claim #1");
+    await screen.findByText("Ownership claim");
 
     await user.click(screen.getByRole("button", { name: "Reject Claim" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText(/Reject claim #1/)).toBeInTheDocument();
+    expect(screen.getByText("Reject claim")).toBeInTheDocument();
   });
 
   it("sends verify POST on approve confirm", async () => {
@@ -138,7 +142,7 @@ describe("ReviewClaims", () => {
     const user = userEvent.setup();
 
     renderWithProviders(<ReviewClaims />);
-    await screen.findByText("Claim #1");
+    await screen.findByText("Ownership claim");
 
     await user.click(screen.getByRole("button", { name: "Approve Claim" }));
     // Default result in modal is "Approved"
@@ -170,7 +174,7 @@ describe("ReviewClaims", () => {
     const user = userEvent.setup();
 
     renderWithProviders(<ReviewClaims />);
-    await screen.findByText("Claim #1");
+    await screen.findByText("Ownership claim");
 
     await user.click(screen.getByRole("button", { name: "Reject Claim" }));
     // The modal's decision dropdown should be set to "Rejected"

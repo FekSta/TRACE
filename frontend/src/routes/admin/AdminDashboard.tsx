@@ -128,10 +128,14 @@ export default function AdminDashboard({ query = "" }: { query?: string }) {
               <tbody className="divide-y divide-line text-small">
                 {visibleClaims.map((c) => (
                   <tr key={c.id} className="transition-colors hover:bg-soft">
-                    <td className="px-4 py-3.5 font-semibold text-ink">#{c.id}</td>
-                    <td className="px-4 py-3.5">user #{c.user_id}</td>
+                    <td className="px-4 py-3.5 font-semibold text-ink">
+                      {c.lost_item_title ?? c.found_item_title ?? "Claim"}
+                    </td>
+                    <td className="px-4 py-3.5">{c.claimant_name ?? "—"}</td>
                     <td className="px-4 py-3.5">
-                      L#<strong>{c.lost_item_id}</strong> ↔ F#<strong>{c.found_item_id}</strong>
+                      {c.lost_item_title ?? "Lost item"}
+                      <span className="mx-1 text-muted">↔</span>
+                      {c.found_item_title ?? "Found item"}
                     </td>
                     <td className="px-4 py-3.5">
                       <StatusBadge status={c.verification_status} />
@@ -159,20 +163,20 @@ export default function AdminDashboard({ query = "" }: { query?: string }) {
 
       <Modal
         open={viewed !== null}
-        title={`Claim #${viewed?.id ?? ""}`}
+        title="Claim details"
         onClose={() => setViewed(null)}
         footer={<Button onClick={() => setViewed(null)}>Close</Button>}
       >
         {viewed && (
           <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
             {[
-              ["Claimant", `User #${viewed.user_id}`],
-              ["Lost item", `Lost #${viewed.lost_item_id}`],
-              ["Found item", `Found #${viewed.found_item_id}`],
+              ["Claimant", viewed.claimant_name ?? "—"],
+              ["Lost item", viewed.lost_item_title ?? "—"],
+              ["Found item", viewed.found_item_title ?? "—"],
               ["Verification", viewed.verification_status],
               ["Status", viewed.status],
               ["Claim date", new Date(viewed.claim_date).toLocaleString()],
-              ["Reviewing officer", viewed.officer_id ? `User #${viewed.officer_id}` : "Not yet assigned"],
+              ["Reviewing officer", viewed.officer_name ?? "Not yet assigned"],
               ["Collected", viewed.collection_date ? new Date(viewed.collection_date).toLocaleString() : "Not collected"],
             ].map(([term, detail]) => (
               <div key={term}>

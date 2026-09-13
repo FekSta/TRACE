@@ -25,6 +25,8 @@ from app.models import (
     AuditLog,
     Claim,
     CollectionRecord,
+    FoundItem,
+    LostItem,
     Match,
     User,
     VerificationRecord,
@@ -64,6 +66,44 @@ def audit(
 
 
 # --- Scoping ------------------------------------------------------------------
+
+def load_item_titles(
+    db: Session, lost_ids: set[int], found_ids: set[int]
+) -> tuple[dict[int, str], dict[int, str]]:
+    """Batch-resolve item ids to titles (one query per item kind).
+
+    Claims own their own join: a claim response carries the two item titles so
+    the UI never prints `Lost #{id}` / `Found #{id}`.
+    """
+    lost: dict[int, str] = {}
+    found: dict[int, str] = {}
+    if lost_ids:
+        lost = dict(
+            db.execute(select(LostItem.id, LostItem.title).where(LostItem.id.in_(lost_ids))).all()
+        )
+    if found_ids:
+        found = dict(
+            db.execute(
+                select(FoundItem.id, FoundItem.title).where(FoundItem.id.in_(found_ids))
+            ).all()
+        )
+    return lost, found
+
+
+def load_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
+    """Batch-resolve ``user id -> "First Last"`` in a single query.
+
+    Slice A display enrichment for staff callers only. The Claims module owns
+    its own join (a deliberate copy of the Items helper — no shared
+    cross-module user directory), and this is never exposed publicly.
+    """
+    if not user_ids:
+        return {}
+    rows = db.execute(
+        select(User.id, User.first_name, User.last_name).where(User.id.in_(user_ids))
+    ).all()
+    return {user_id: f"{first} {last}".strip() for user_id, first, last in rows}
+
 
 def get_scoped_claim(db: Session, claim_id: int, user: User) -> Claim:
     """Fetch a Claim with the Module 3 scoping pattern; 404 for missing or

@@ -110,16 +110,16 @@ export default function MyClaims({
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {list.map((c) => (
-            <Card key={c.id} title={`Claim #${c.id}`} meta={fmtDate(c.claim_date)}>
+            <Card key={c.id} title={c.lost_item_title ?? "Ownership claim"} meta={fmtDate(c.claim_date)}>
               <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-input border border-line bg-soft p-3.5">
                   <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">
                     Item pairing
                   </span>
                   <div className="mt-1.5 text-body font-semibold text-ink">
-                    Lost #<span className="text-ink">{c.lost_item_id}</span>
+                    {c.lost_item_title ?? "Lost item"}
                     <span className="mx-1 text-muted">↔</span>
-                    Found #<span className="text-ink">{c.found_item_id}</span>
+                    {c.found_item_title ?? "Found item"}
                   </div>
                 </div>
                 <div className="rounded-input border border-line bg-soft p-3.5">
