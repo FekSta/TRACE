@@ -623,6 +623,9 @@ referenced in this same style.
 |---|---|---|---|
 | `POST` | `/auth/register` | none | Create a `User` account (role always `User`) |
 | `POST` | `/auth/login` | none | Exchange email + password for a JWT |
+| `GET` | `/auth/me` | Bearer, any active role | Read the signed-in user's own profile |
+| `PATCH` | `/auth/me` | Bearer, any active role | Update own personal details (never `role`) |
+| `POST` | `/auth/me/password` | Bearer, any active role | Change own password (requires current password) |
 | `GET` | `/auth/test-protected` | Bearer, `Administrator` only | THROWAWAY route proving 401/403 (remove later) |
 | `GET` | `/items/lost` | Bearer, any active role | Module 3 stub proving `require_role` works outside Auth |
 
@@ -817,6 +820,89 @@ curl -X PUT http://localhost:8000/admin/users/<id> -H "Authorization: Bearer $AD
 curl -i -X POST http://localhost:8000/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"grace@example.com","password":"<password from Mailpit>"}' # 403
 ```
+
+### 8.9 Self-service profile (retrofit 2026-09-13)
+
+The sidebar footer's **Profile** button opens a modal pre-filled from these
+routes. Both are scoped to the caller by the bearer token — there is no `{id}`
+segment in the path, so a user can only ever read/update their own row.
+
+| Method | Path | Auth required | Purpose |
+|---|---|---|---|
+| `GET` | `/auth/me` | Bearer, any active role | Read the caller's own account |
+| `PATCH` | `/auth/me` | Bearer, any active role | Update First name / Last name / Email / Phone number |
+| `POST` | `/auth/me/password` | Bearer, any active role | Change own password (requires current password) |
+
+#### `GET /auth/me`
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/auth/me
+```
+
+`200 OK` returns the standard `UserResponse` (the same fields as
+`POST /auth/register`, including `role` and `status`). Errors: `401`
+(missing/invalid token), `403` (account not `Active`).
+
+#### `PATCH /auth/me`
+
+Partial update. All four fields are optional; omitted fields are left
+unchanged, names/email are trimmed, and email is lower-cased (a duplicate
+returns `409`). `phone_number: null` clears the phone number.
+
+**Role and Status cannot be changed through this route.** The request schema
+is `ProfileUpdateRequest`, which contains only `first_name`, `last_name`,
+`email`, and `phone_number`, and sets `extra="forbid"` — so a body containing
+`"role"` (or `"status"`, or any other unknown field) is **rejected with
+`422`** and the stored role is untouched. Role changes remain exclusive to the
+Administrator flow in §8.8 (`POST`/`PUT /admin/users`).
+
+```bash
+curl -X PATCH http://localhost:8000/auth/me \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"first_name":"Ada","last_name":"Byron","phone_number":"+27821234567"}'
+
+# Escalation attempt — 422, role unchanged:
+curl -i -X PATCH http://localhost:8000/auth/me \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"role":"Administrator"}'
+```
+
+Errors: `401`, `403` (non-`Active`), `409` (duplicate email), `422`
+(validation, including any attempted `role`/`status`).
+
+#### `POST /auth/me/password`
+
+Rotates the caller's own password. Body is exactly
+`current_password` + `new_password` (8–72 chars, the same bcrypt ceiling as
+registration); the caller must prove they know the current password, so a
+stolen token alone cannot lock the owner out. On success: `204 No Content`.
+
+A wrong `current_password` returns **`400`**, deliberately not `401`: the
+bearer token is still valid, and the frontend treats `401`/`403` as an expired
+session and logs the user out.
+
+```bash
+curl -i -X POST http://localhost:8000/auth/me/password \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"current_password":"SuperSecret1!","new_password":"BrandNewPass1!"}'
+# -> 204 No Content
+
+# Wrong current password -> 400, password unchanged:
+curl -i -X POST http://localhost:8000/auth/me/password \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"current_password":"nope","new_password":"BrandNewPass1!"}'
+```
+
+Errors: `400` (current password incorrect), `401` (missing/invalid token),
+`403` (non-`Active`), `422` (new password too short, or any extra/unknown
+field such as `role`).
+
+> Note: JWTs are stateless and are not revoked by a password change — any
+> already-issued token stays valid until it expires. A “log out other
+> sessions” mechanism would need server-side token state (out of scope here).
+
+Regression tests: `backend/tests/test_auth.py::TestSelfServiceProfile` and
+`::TestChangePassword`.
 
 ### 8.5 `require_role` usage pattern (copy-paste for Modules 3–6)
 
@@ -1050,6 +1136,42 @@ curl -s -H "Authorization: Bearer $OTOKEN" http://localhost:8000/items/lost
 # expected: the User sees only their own items; the Officer sees all
 ```
 
+### 9.9 Display enrichment — names instead of raw IDs (Slice A + A.2)
+
+> Implemented 2026-09-13. The first pass
+> (`prompts/agent-prompt-display-enrichment.md` Slice A) was staff-only names
+> on list responses; it was extended across **every** item route and every
+> portal display by `prompts/agent-prompt-display-names-all-screens.md`
+> (decisions recorded in `Review.md`). Read-only, **no schema change / no
+> migration**.
+
+`LostItemResponse` and `FoundItemResponse` gain two read-only, nullable fields,
+now populated on **every** item response — list, `GET` one, `POST` create, and
+`PATCH` update:
+
+| Field | Type | Populated | Null |
+|---|---|---|---|
+| `category_name` | `string \| null` | **every caller** (all roles may read categories) | only if the category id is unknown |
+| `reporter_name` | `string \| null` | staff on **any** row; a plain `User` on **their own** rows | another user's row — an identity is never leaked |
+
+`reporter_name` is `"<first_name> <last_name>"` (trimmed). Both lookups are a
+single batched query per response — `items.service.load_reporter_names` and
+`items.service.load_category_names` — never one query per row. Scoping is
+unchanged: cross-user item access is still `404`, never `403`.
+
+```bash
+# Officer sees the reporter name and category name
+curl -s -H "Authorization: Bearer $OFFICER_TOKEN" http://localhost:8000/items/lost \
+  | python3 -m json.tool | grep -E 'reporter_name|category_name'
+# -> "reporter_name": "Ada Lovelace", "category_name": "Bags"
+# the owning User sees their own name (no ID fallback in the portal)
+curl -s -H "Authorization: Bearer $USER_TOKEN" http://localhost:8000/items/lost \
+  | python3 -m json.tool | grep reporter_name         # "reporter_name": "Ada Lovelace"
+# a different User never sees it (and does not get the row at all)
+```
+
+Tests: `backend/tests/test_display_enrichment.py`.
+
 ## 10. Matching Engine API (Module 4)
 
 The Matching module (`backend/app/modules/matching/`) scores every new
@@ -1212,6 +1334,35 @@ MATCH_ID=$(curl -s -H "Authorization: Bearer $TA" http://localhost:8000/matches 
   | python3 -c 'import sys,json;print(json.load(sys.stdin)[0]["id"])')
 curl -s -X POST http://localhost:8000/matches/$MATCH_ID/accept -H "Authorization: Bearer $TB"
 ```
+
+### 10.8 Display enrichment — item titles + staff-only reporter names (Slice A.2)
+
+> Implemented 2026-09-13 from `prompts/agent-prompt-display-names-all-screens.md`.
+> Read-only, no schema change.
+
+`MatchResponse` gains four read-only, nullable fields, populated on
+`GET /matches` and on the accept/reject responses:
+
+| Field | Type | Populated | Null |
+|---|---|---|---|
+| `lost_item_title` / `found_item_title` | `string \| null` | **every caller who can see the match** | missing item |
+| `lost_reporter_name` / `found_reporter_name` | `string \| null` | staff only | a plain `User` |
+
+The titles let the User portal's `MyMatches` render the counterparty item
+(e.g. `Blue Sony headphones`) instead of `Found item #{id}`; the names let the
+officer/admin match views avoid `User #{id}`. The Matching module owns its own
+batched lookup (`_user_names` in `matching/router.py`) — deliberately mirrored,
+not a shared cross-module user directory.
+
+```bash
+curl -s -H "Authorization: Bearer $OFFICER_TOKEN" http://localhost:8000/matches \
+  | python3 -m json.tool | grep -E 'item_title|reporter_name'
+# -> lost/found titles and both reporter names
+curl -s -H "Authorization: Bearer $USER_TOKEN" http://localhost:8000/matches \
+  | python3 -m json.tool | grep reporter_name      # "lost_reporter_name": null (staff-only)
+```
+
+Tests: `backend/tests/test_display_enrichment.py`.
 
 ## 11. Claims & Verification API (Module 5)
 
@@ -1407,6 +1558,39 @@ curl -s -X POST http://localhost:8000/claims/$CLAIM/verify -H "Authorization: Be
 curl -s -X POST http://localhost:8000/claims/$CLAIM/collect -H "Authorization: Bearer $TO" \
   -H 'Content-Type: application/json' -d '{}'   # 400
 ```
+
+### 11.8 Display enrichment — names + item titles (Slice A + A.2)
+
+> Implemented 2026-09-13. Staff-only names on list responses
+> (`prompts/agent-prompt-display-enrichment.md` Slice A) were extended to
+> **every** claim response and to the item titles by
+> `prompts/agent-prompt-display-names-all-screens.md`. Read-only, **no schema
+> change / no migration**.
+
+`ClaimResponse` gains four read-only, nullable fields, populated on every
+claim response — `GET /claims`, `GET /claims/{id}`, verify, and collect:
+
+| Field | Type | Populated | Null |
+|---|---|---|---|
+| `lost_item_title` / `found_item_title` | `string \| null` | **anyone who can see the claim** (the pairing is the point of a claim) | missing item |
+| `claimant_name` | `string \| null` | staff on **any** claim; a plain `User` on **their own** claims (name of `user_id`) | another user's claim |
+| `officer_name` | `string \| null` | **staff only** (name of `officer_id`, when set) | a plain `User`, an unassigned claim |
+
+All three lookups are one batched query per response
+(`claims.service.load_item_titles` / `load_user_names` — the Claims module's own
+joins, no shared cross-module user directory). A plain `User` never sees
+another user's name; scoping is unchanged (`404` for cross-user access).
+
+```bash
+curl -s -H "Authorization: Bearer $OFFICER_TOKEN" http://localhost:8000/claims \
+  | python3 -m json.tool | grep -E 'claimant_name|officer_name|item_title'
+# -> "lost_item_title": "Silver laptop", "claimant_name": "Ada Lovelace", "officer_name": "Grace Hopper"
+curl -s -H "Authorization: Bearer $USER_TOKEN" http://localhost:8000/claims \
+  | python3 -m json.tool | grep -E 'claimant_name|officer_name'
+# -> "claimant_name": "Ada Lovelace" (own claim), "officer_name": null (never exposed)
+```
+
+Tests: `backend/tests/test_display_enrichment.py`.
 
 ---
 

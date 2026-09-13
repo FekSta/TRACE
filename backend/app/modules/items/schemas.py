@@ -80,6 +80,13 @@ class LostItemResponse(BaseModel):
     date_lost: date | None
     location_lost: str | None
     status: LostItemStatus
+    # Display enrichment (Slice A): the reporter's name and the category name.
+    # `reporter_name` is populated for staff on any row, and for a plain User
+    # only on their own rows; it is null for another user's row
+    # (Notes.md §9.9). `category_name` is safe for every caller (categories are
+    # readable by all roles) and replaces `Category #{id}` in the UI.
+    reporter_name: str | None = None
+    category_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -118,6 +125,10 @@ class FoundItemResponse(BaseModel):
     date_found: date | None
     storage_location: str | None
     status: FoundItemStatus
+    # Staff-only on other users' rows (Slice A) — see
+    # LostItemResponse.reporter_name. `category_name` is safe for all callers.
+    reporter_name: str | None = None
+    category_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

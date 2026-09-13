@@ -586,3 +586,175 @@ class TestEmailNormalization:
             },
         )
         assert resp.status_code == 200
+
+
+# =============================================================================
+# Self-service profile — GET/PATCH /auth/me (sidebar Profile modal)
+# =============================================================================
+
+
+def _auth_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+class TestSelfServiceProfile:
+    """A signed-in user can view/edit only their own personal details, and
+    role is never editable through this route (Module 9 sidebar retrofit DoD)."""
+
+    def test_get_me_returns_own_profile(self, client, user_token, user):
+        resp = client.get("/auth/me", headers=_auth_headers(user_token))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == user.id
+        assert body["email"] == "ada@example.com"
+        assert body["first_name"] == "Ada"
+        assert body["role"] == "User"
+
+    def test_get_me_requires_a_token(self, client):
+        assert client.get("/auth/me").status_code == 401
+
+    def test_patch_me_updates_personal_details(self, client, user_token):
+        resp = client.patch(
+            "/auth/me",
+            headers=_auth_headers(user_token),
+            json={
+                "first_name": "  Ada  ",
+                "last_name": "Byron",
+                "email": "Ada.Byron@Example.COM",
+                "phone_number": "+27821234567",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["first_name"] == "Ada"  # trimmed
+        assert body["last_name"] == "Byron"
+        assert body["email"] == "ada.byron@example.com"  # lowercased
+        assert body["phone_number"] == "+27821234567"
+        assert body["role"] == "User"
+
+    def test_patch_me_can_clear_phone_number(self, client, user_token):
+        client.patch(
+            "/auth/me",
+            headers=_auth_headers(user_token),
+            json={"phone_number": "+27120000000"},
+        )
+        resp = client.patch(
+            "/auth/me",
+            headers=_auth_headers(user_token),
+            json={"phone_number": None},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["phone_number"] is None
+
+    def test_patch_me_duplicate_email_returns_409(self, client, user_token, bob):
+        resp = client.patch(
+            "/auth/me",
+            headers=_auth_headers(user_token),
+            json={"email": bob.email},
+        )
+        assert resp.status_code == 409
+        assert "already registered" in resp.json()["detail"].lower()
+
+    def test_patch_me_rejects_role_and_does_not_change_it(self, client, user_token, user):
+        """Directly attempting privilege escalation is refused, not ignored:
+        `role` is not part of the request schema, so the request is a 422 and
+        the stored role is untouched."""
+        resp = client.patch(
+            "/auth/me",
+            headers=_auth_headers(user_token),
+            json={"role": "Administrator"},
+        )
+        assert resp.status_code == 422
+
+        # Confirm on a fresh read that the role did not move.
+        check = client.get("/auth/me", headers=_auth_headers(user_token))
+        assert check.status_code == 200
+        assert check.json()["role"] == "User"
+        assert user.role == UserRole.USER
+
+    def test_patch_me_rejects_status(self, client, user_token):
+        """Status is Administrator-managed too and cannot be self-edited."""
+        resp = client.patch(
+            "/auth/me",
+            headers=_auth_headers(user_token),
+            json={"status": "Suspended"},
+        )
+        assert resp.status_code == 422
+
+    def test_patch_me_requires_a_token(self, client):
+        assert client.patch("/auth/me", json={"first_name": "Mallory"}).status_code == 401
+
+    def test_officer_and_admin_can_use_own_profile(self, client, officer_token, admin_token):
+        for token, role in ((officer_token, "Officer"), (admin_token, "Administrator")):
+            resp = client.get("/auth/me", headers=_auth_headers(token))
+            assert resp.status_code == 200
+            assert resp.json()["role"] == role
+
+
+class TestChangePassword:
+    """``POST /auth/me/password`` — self-service rotation guarded by the
+    current password, without letting a wrong guess log the user out."""
+
+    def test_change_with_wrong_current_password_returns_400(self, client, user_token):
+        resp = client.post(
+            "/auth/me/password",
+            headers=_auth_headers(user_token),
+            json={"current_password": "WrongPass1!", "new_password": "BrandNewPass1!"},
+        )
+        assert resp.status_code == 400
+        assert "current password" in resp.json()["detail"].lower()
+
+        # Old password still works — a rejected change must not have altered it.
+        login = client.post(
+            "/auth/login",
+            json={"email": "ada@example.com", "password": "SuperSecret1!"},
+        )
+        assert login.status_code == 200
+
+    def test_change_password_then_login_with_new_password(self, client, user_token):
+        resp = client.post(
+            "/auth/me/password",
+            headers=_auth_headers(user_token),
+            json={"current_password": "SuperSecret1!", "new_password": "BrandNewPass1!"},
+        )
+        assert resp.status_code == 204
+
+        new_login = client.post(
+            "/auth/login",
+            json={"email": "ada@example.com", "password": "BrandNewPass1!"},
+        )
+        assert new_login.status_code == 200
+
+        old_login = client.post(
+            "/auth/login",
+            json={"email": "ada@example.com", "password": "SuperSecret1!"},
+        )
+        assert old_login.status_code == 401
+
+    def test_short_new_password_returns_422(self, client, user_token):
+        resp = client.post(
+            "/auth/me/password",
+            headers=_auth_headers(user_token),
+            json={"current_password": "SuperSecret1!", "new_password": "short"},
+        )
+        assert resp.status_code == 422
+
+    def test_change_password_requires_a_token(self, client):
+        resp = client.post(
+            "/auth/me/password",
+            json={"current_password": "SuperSecret1!", "new_password": "BrandNewPass1!"},
+        )
+        assert resp.status_code == 401
+
+    def test_change_password_rejects_unknown_fields(self, client, user_token):
+        """A password rotation cannot smuggle account fields (e.g. role)."""
+        resp = client.post(
+            "/auth/me/password",
+            headers=_auth_headers(user_token),
+            json={
+                "current_password": "SuperSecret1!",
+                "new_password": "BrandNewPass1!",
+                "role": "Administrator",
+            },
+        )
+        assert resp.status_code == 422

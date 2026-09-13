@@ -172,8 +172,10 @@ export default function MyMatches({ query = "" }: { query?: string }) {
           {visible.map((match) => {
             const score = Math.round(Number(match.match_score));
             const claim = claimByPair.get(`${match.lost_item_id}:${match.found_item_id}`);
-            const lostName = lostTitle.get(match.lost_item_id) ?? `Lost item #${match.lost_item_id}`;
-            const foundName = foundTitle.get(match.found_item_id) ?? `Found item #${match.found_item_id}`;
+            const lostName =
+              match.lost_item_title ?? lostTitle.get(match.lost_item_id) ?? "Lost item";
+            const foundName =
+              match.found_item_title ?? foundTitle.get(match.found_item_id) ?? "Found item";
             const reached = reachedStep(match, claim);
             const lastUpdate = claim ? new Date(claim.claim_date) : new Date(match.generated_at);
 
@@ -197,7 +199,7 @@ export default function MyMatches({ query = "" }: { query?: string }) {
                         <StatusBadge status="Found" />
                       </div>
                       <p className="mt-1 text-small text-muted">
-                        Match #{match.id} · {score}% confidence · {match.status}
+                        {score}% confidence · {match.status}
                       </p>
                       <p className="mt-0.5 text-small text-muted">
                         Last update:{" "}
@@ -215,16 +217,21 @@ export default function MyMatches({ query = "" }: { query?: string }) {
                   </div>
 
                   {match.status === "Suggested" && (
-                    <div className="flex shrink-0 gap-2.5 lg:flex-col">
+                    <div className="grid shrink-0 grid-cols-2 gap-2.5 lg:w-[210px] lg:grid-cols-1">
                       <Button
                         variant="primary"
-                        className="flex-1"
+                        className="w-full"
                         disabled={busy === match.id}
                         onClick={() => decide(match, "accept")}
                       >
                         {busy === match.id ? "Working…" : "Accept & Submit Claim"}
                       </Button>
-                      <Button variant="danger" disabled={busy === match.id} onClick={() => decide(match, "reject")}>
+                      <Button
+                        variant="danger"
+                        className="w-full"
+                        disabled={busy === match.id}
+                        onClick={() => decide(match, "reject")}
+                      >
                         Reject
                       </Button>
                     </div>

@@ -26,6 +26,15 @@ class ClaimResponse(BaseModel):
     verification_notes: str | None
     collection_date: datetime | None
     status: ClaimStatus
+    # Display enrichment (Slice A): `claimant_name` is populated for staff on
+    # any claim and for a plain User only on their own claims; `officer_name`
+    # is staff-only. `lost_item_title` / `found_item_title` are safe for every
+    # caller who can see the claim (a claim is inherently about its pairing)
+    # and replace `Lost #{id} / Found #{id}` in the UI. See Notes.md §11.8.
+    lost_item_title: str | None = None
+    found_item_title: str | None = None
+    claimant_name: str | None = None
+    officer_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

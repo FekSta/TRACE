@@ -42,10 +42,11 @@ function indicatorFor(status: Claim["verification_status"]): "Pending" | "Approv
  * approve/reject actions.
  *
  * Two mockup blocks are deliberately absent because nothing stores them:
- * claimant email/phone (no user endpoint for officers — `User #{id}` is shown)
- * and the *Proof of ownership* file chips (attachments exist only for items,
- * never for claims). Both are recorded in `Notes.md` §13.5 and scoped in
- * `prompts/agent-prompt-display-enrichment.md`.
+ * claimant email/phone (no user endpoint for officers — the claimant's
+ * **name** is shown from the enriched claim payload instead) and the *Proof
+ * of ownership* file chips (attachments exist only for items, never for
+ * claims). Both are recorded in `Notes.md` §13.5 and scoped in
+ * `prompts/agent-prompt-display-names-all-screens.md`.
  */
 export default function ReviewClaims({ query = "" }: { query?: string }) {
   const { show } = useToast();
@@ -102,7 +103,7 @@ export default function ReviewClaims({ query = "" }: { query?: string }) {
         notes: notes || null,
         verification_method: method || null,
       });
-      show(`Claim #${selected.id} ${result === "Approved" ? "approved" : "rejected"}.`);
+      show(`Claim ${result === "Approved" ? "approved" : "rejected"}.`);
       setSelected(null);
       claims.reload();
     } catch (err) {
@@ -146,9 +147,9 @@ export default function ReviewClaims({ query = "" }: { query?: string }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-display text-h3 text-ink">
-                      {lostItem?.title ?? `Lost item #${c.lost_item_id}`}
+                      {lostItem?.title ?? c.lost_item_title ?? "Lost item"}
                     </h3>
-                    <p className="mt-0.5 text-small text-muted">Claim #{c.id}</p>
+                    <p className="mt-0.5 text-small text-muted">Ownership claim</p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1.5">
                     <StatusBadge status="Found" />
@@ -161,7 +162,9 @@ export default function ReviewClaims({ query = "" }: { query?: string }) {
                     <span className="text-small font-semibold uppercase tracking-[0.06em] text-muted">
                       Claimant
                     </span>
-                    <div className="mt-1 text-body font-semibold text-ink">User #{c.user_id}</div>
+                    <div className="mt-1 text-body font-semibold text-ink">
+                      {c.claimant_name ?? "Claimant"}
+                    </div>
                     <p className="mt-0.5 text-small text-muted">
                       {new Date(c.claim_date).toLocaleDateString(undefined, {
                         day: "numeric",
@@ -250,7 +253,7 @@ export default function ReviewClaims({ query = "" }: { query?: string }) {
 
       <Modal
         open={selected !== null}
-        title={`${result === "Approved" ? "Approve" : "Reject"} claim #${selected?.id ?? ""}`}
+        title={result === "Approved" ? "Approve claim" : "Reject claim"}
         onClose={() => setSelected(null)}
         footer={
           <>

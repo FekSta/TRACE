@@ -41,6 +41,8 @@ const lostItem = {
   date_lost: "2026-08-10",
   location_lost: "Main Terminal",
   status: "Reported",
+  reporter_name: "Ada Lovelace",
+  category_name: "Accessories",
 };
 
 const foundItem = {
@@ -54,6 +56,8 @@ const foundItem = {
   date_found: "2026-08-11",
   storage_location: "Parking Garage B",
   status: "Available",
+  reporter_name: "Bob Builder",
+  category_name: "Accessories",
 };
 
 const pendingClaim = {
@@ -67,6 +71,10 @@ const pendingClaim = {
   verification_notes: null,
   collection_date: null,
   status: "Active",
+  lost_item_title: "Black Leather Wallet",
+  found_item_title: "Toyota Car Keys",
+  claimant_name: "Ada Lovelace",
+  officer_name: null,
 };
 
 const approvedClaim = { ...pendingClaim, id: 11, verification_status: "Approved" };
@@ -133,7 +141,7 @@ describe("OfficerDashboard", () => {
     expect(await screen.findByText("Verification Queue")).toBeInTheDocument();
     // shown twice: the verification queue row and the active-claims table row
     expect(screen.getAllByText("Black Leather Wallet").length).toBeGreaterThan(0);
-    expect(screen.getByText("Reported by User #1")).toBeInTheDocument();
+    expect(screen.getByText("Reported by Ada Lovelace")).toBeInTheDocument();
     expect(screen.getByText("Pending Verifications")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /^All/ })).toHaveAttribute("aria-selected", "true");
     // match score joined from /matches by the lost/found pair
@@ -150,7 +158,7 @@ describe("OfficerDashboard", () => {
     expect(screen.getByText("No claims in this view yet.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /^All/ }));
-    expect(screen.getByText("User #1")).toBeInTheDocument();
+    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
   });
 
   it("narrows the active claims table with the topbar search", async () => {
@@ -193,7 +201,7 @@ describe("VerifyReports", () => {
 
     await user.click(screen.getByRole("button", { name: "Verify Report" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText(/Update status — report #1/)).toBeInTheDocument();
+    expect(screen.getByText("Update status — Black Leather Wallet")).toBeInTheDocument();
   });
 });
 

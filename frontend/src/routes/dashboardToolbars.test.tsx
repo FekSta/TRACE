@@ -37,6 +37,10 @@ const claim = {
   verification_notes: null,
   collection_date: null,
   status: "Active",
+  lost_item_title: "Black Leather Wallet",
+  found_item_title: "Toyota Car Keys",
+  claimant_name: "Ada Lovelace",
+  officer_name: null,
 };
 
 const match = {
@@ -47,6 +51,10 @@ const match = {
   match_reason: "Same brand and colour",
   status: "Suggested",
   generated_at: "2026-08-12T09:00:00Z",
+  lost_item_title: "Black Leather Wallet",
+  found_item_title: "Toyota Car Keys",
+  lost_reporter_name: "Ada Lovelace",
+  found_reporter_name: "Bob Builder",
 };
 
 const lostItem = {
@@ -60,6 +68,8 @@ const lostItem = {
   date_lost: "2026-08-10",
   location_lost: "Main Terminal",
   status: "Reported",
+  reporter_name: "Ada Lovelace",
+  category_name: "Accessories",
 };
 
 const foundItem = {
@@ -73,6 +83,8 @@ const foundItem = {
   date_found: "2026-08-11",
   storage_location: "Parking Garage B",
   status: "Available",
+  reporter_name: "Bob Builder",
+  category_name: "Accessories",
 };
 
 const category = {
@@ -258,7 +270,7 @@ describe("Student dashboard toolbars", () => {
 
     expect(await screen.findByText("Claim Submitted")).toBeInTheDocument();
     expect(screen.getByText("Recovered")).toBeInTheDocument();
-    expect(screen.getByText(/Match #5 · 78% confidence/)).toBeInTheDocument();
+    expect(screen.getByText(/78% confidence · Suggested/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Accept & Submit Claim" })).toBeInTheDocument();
   });
 

@@ -127,10 +127,10 @@ migrate-backend: ## Run Alembic migrations against the running backend container
 update-requirements-backend: ## Regenerate pinned backend requirements/*.txt from requirements/*.in (re-pin, not bump-to-latest)
 	@echo "=== Backend: regenerating requirements/base.txt, local.txt, test.txt ==="
 	@cd backend && test -x .venv/bin/pip-compile || { echo "ERROR: pip-tools not found in backend/.venv — run 'make venv' first, or 'cd backend && python3 -m venv .venv && .venv/bin/pip install pip-tools'"; exit 1; }
-	cd backend && .venv/bin/pip-compile requirements/base.in  -o requirements/base.txt
-	cd backend && .venv/bin/pip-compile requirements/local.in -o requirements/local.txt
-	cd backend && .venv/bin/pip-compile requirements/test.in  -o requirements/test.txt
-	@echo "Backend requirements/*.txt regenerated."
+	cd backend && .venv/bin/pip-compile --generate-hashes requirements/base.in  -o requirements/base.txt
+	cd backend && .venv/bin/pip-compile --generate-hashes requirements/local.in -o requirements/local.txt
+	cd backend && .venv/bin/pip-compile --generate-hashes requirements/test.in  -o requirements/test.txt
+	@echo "Backend requirements/*.txt regenerated (with hashes)."
 	@echo ""
 	@echo "Done. Rebuild the backend (docker compose build backend) and re-test before committing."
 

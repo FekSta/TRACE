@@ -24,7 +24,7 @@ interface QueueRow {
   kind: "lost" | "found";
   status: string;
   location: string | null;
-  reporter: number;
+  reporterName: string | null;
 }
 
 /** Matches >= this score are surfaced as "high match score" (same threshold
@@ -54,10 +54,11 @@ function indicatorFor(status: Claim["verification_status"]): "Pending" | "Approv
  *  a verification queue with Verify/Reject actions, two summary cards, and an
  *  Active Claims table with card-level filter tabs and a table footer.
  *
- *  Fed by the existing unscoped list endpoints. The UI degrades honestly where
- *  the API has no data: there is no reporter name (shown as `User #id`), no
- *  item thumbnail, and no timestamp, so the mockup's relative-time and
- *  sparkline affordances are omitted rather than faked (Review.md). */
+ *  Fed by the existing unscoped list endpoints, now enriched with reporter
+ *  names / claimant names / item titles so no row shows a raw ID. The UI still
+ *  degrades honestly where the API has no data: no item thumbnail and no item
+ *  timestamp, so the mockup's relative-time and sparkline affordances are
+ *  omitted rather than faked (Review.md, `Notes.md` §9.9). */
 export default function OfficerDashboard({ query = "", onNavigate }: Props) {
   const lost = useAuthedFetch<LostItem[]>("/items/lost");
   const found = useAuthedFetch<FoundItem[]>("/items/found");
@@ -94,7 +95,7 @@ export default function OfficerDashboard({ query = "", onNavigate }: Props) {
         kind: "lost" as const,
         status: i.status,
         location: i.location_lost,
-        reporter: i.user_id,
+        reporterName: i.reporter_name,
       })),
     ...foundItems
       .filter((i) => i.status === "Available")
@@ -104,7 +105,7 @@ export default function OfficerDashboard({ query = "", onNavigate }: Props) {
         kind: "found" as const,
         status: i.status,
         location: i.storage_location,
-        reporter: i.user_id,
+        reporterName: i.reporter_name,
       })),
   ].slice(0, 5);
 
@@ -161,7 +162,9 @@ export default function OfficerDashboard({ query = "", onNavigate }: Props) {
                       <strong className="truncate text-body text-ink">{row.title}</strong>
                       <StatusBadge status={row.kind === "lost" ? "Lost" : "Found"} />
                     </div>
-                    <p className="mt-0.5 text-small text-muted">Reported by User #{row.reporter}</p>
+                    <p className="mt-0.5 text-small text-muted">
+                      Reported by {row.reporterName ?? "the reporter"}
+                    </p>
                     <p className="mt-0.5 inline-flex items-center gap-1 text-small text-muted">
                       <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
                         location_on
@@ -228,9 +231,11 @@ export default function OfficerDashboard({ query = "", onNavigate }: Props) {
                 {visible.map((claim) => {
                   const score = scoreByPair.get(`${claim.lost_item_id}:${claim.found_item_id}`);
                   const title =
+                    claim.lost_item_title ??
                     lostTitle.get(claim.lost_item_id) ??
+                    claim.found_item_title ??
                     foundTitle.get(claim.found_item_id) ??
-                    `Lost #${claim.lost_item_id} ↔ Found #${claim.found_item_id}`;
+                    "Item pairing";
                   return (
                     <tr key={claim.id} className="transition-colors hover:bg-soft">
                       <td className="px-4 py-3.5">
@@ -243,7 +248,7 @@ export default function OfficerDashboard({ query = "", onNavigate }: Props) {
                           <span className="font-semibold text-ink">{title}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3.5 text-muted">User #{claim.user_id}</td>
+                      <td className="px-4 py-3.5 text-muted">{claim.claimant_name ?? "—"}</td>
                       <td className="px-4 py-3.5">
                         {score === undefined ? (
                           <span className="text-muted">—</span>

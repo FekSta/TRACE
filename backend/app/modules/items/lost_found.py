@@ -31,6 +31,8 @@ from app.modules.items.service import (
     ensure_active_category,
     get_scoped,
     is_staff,
+    load_category_names,
+    load_reporter_names,
 )
 
 # Module 4: matching runs in a BackgroundTask after the response is sent, so
@@ -41,6 +43,42 @@ from app.modules.matching.service import (
 )
 
 router = APIRouter(tags=["items"])
+
+
+def _enriched(db: Session, items, current_user: User, schema):
+    """Decorate item responses with names instead of raw IDs.
+
+    - `category_name` is populated for **every** caller (all roles may read
+      categories), replacing `Category #{id}` in the UI.
+    - `reporter_name` is populated for staff on any row, and for a plain
+      `User` only on **their own** rows; it stays null on another user's row
+      so no identity is leaked (Notes.md §9.9).
+
+    Both lookups are one batched query per response, never one per row.
+    """
+    if not items:
+        return items
+    staff = is_staff(current_user)
+    category_names = load_category_names(db, {item.category_id for item in items})
+    if staff:
+        user_ids = {item.user_id for item in items}
+    else:
+        user_ids = {item.user_id for item in items if item.user_id == current_user.id}
+    reporter_names = load_reporter_names(db, user_ids)
+    enriched = []
+    for item in items:
+        may_see_name = staff or item.user_id == current_user.id
+        enriched.append(
+            schema.model_validate(item).model_copy(
+                update={
+                    "category_name": category_names.get(item.category_id),
+                    "reporter_name": reporter_names.get(item.user_id)
+                    if may_see_name
+                    else None,
+                }
+            )
+        )
+    return enriched
 
 
 # --- LostItem ---------------------------------------------------------------
@@ -71,7 +109,7 @@ def create_lost_item(
     db.commit()
     db.refresh(item)
     background_tasks.add_task(run_matching_for_lost_item, item.id)
-    return item
+    return _enriched(db, [item], current_user, LostItemResponse)[0]
 
 
 @router.get("/items/lost", response_model=list[LostItemResponse])
@@ -83,7 +121,8 @@ def list_lost_items(
     q = select(LostItem).order_by(LostItem.id.desc())
     if not is_staff(current_user):
         q = q.where(LostItem.user_id == current_user.id)
-    return list(db.scalars(q).all())
+    items = list(db.scalars(q).all())
+    return _enriched(db, items, current_user, LostItemResponse)
 
 
 @router.get("/items/lost/{item_id}", response_model=LostItemResponse)
@@ -93,7 +132,8 @@ def get_lost_item(
     db: Session = Depends(get_db),
 ) -> LostItem:
     """Get one lost item — 404 for cross-user access attempts."""
-    return get_scoped(db, LostItem, item_id, current_user)
+    item = get_scoped(db, LostItem, item_id, current_user)
+    return _enriched(db, [item], current_user, LostItemResponse)[0]
 
 
 @router.patch("/items/lost/{item_id}", response_model=LostItemResponse)
@@ -114,7 +154,7 @@ def update_lost_item(
         setattr(item, field, value)
     db.commit()
     db.refresh(item)
-    return item
+    return _enriched(db, [item], current_user, LostItemResponse)[0]
 
 
 @router.delete("/items/lost/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -157,7 +197,7 @@ def create_found_item(
     db.commit()
     db.refresh(item)
     background_tasks.add_task(run_matching_for_found_item, item.id)
-    return item
+    return _enriched(db, [item], current_user, FoundItemResponse)[0]
 
 
 @router.get("/items/found", response_model=list[FoundItemResponse])
@@ -169,7 +209,8 @@ def list_found_items(
     q = select(FoundItem).order_by(FoundItem.id.desc())
     if not is_staff(current_user):
         q = q.where(FoundItem.user_id == current_user.id)
-    return list(db.scalars(q).all())
+    items = list(db.scalars(q).all())
+    return _enriched(db, items, current_user, FoundItemResponse)
 
 
 @router.get("/items/found/{item_id}", response_model=FoundItemResponse)
@@ -179,7 +220,8 @@ def get_found_item(
     db: Session = Depends(get_db),
 ) -> FoundItem:
     """Get one found item — 404 for cross-user access attempts."""
-    return get_scoped(db, FoundItem, item_id, current_user)
+    item = get_scoped(db, FoundItem, item_id, current_user)
+    return _enriched(db, [item], current_user, FoundItemResponse)[0]
 
 
 @router.patch("/items/found/{item_id}", response_model=FoundItemResponse)
@@ -200,7 +242,7 @@ def update_found_item(
         setattr(item, field, value)
     db.commit()
     db.refresh(item)
-    return item
+    return _enriched(db, [item], current_user, FoundItemResponse)[0]
 
 
 @router.delete("/items/found/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

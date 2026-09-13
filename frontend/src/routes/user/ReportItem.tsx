@@ -58,7 +58,7 @@ export default function ReportItem({ kind, onDone }: Props) {
         fd.append("file", photo);
         await api.postForm(`/items/${kind}/${item.id}/attachments`, fd);
       }
-      show(`${kind === "lost" ? "Lost" : "Found"} item #${item.id} reported — matching is running.`);
+      show(`Your ${kind === "lost" ? "lost" : "found"} item was reported — matching is running.`);
       onDone();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not submit the report.");

@@ -138,7 +138,6 @@ export default function UserDashboard({ onReport, query = "" }: Props) {
                   <tr key={`${row.type}-${row.id}`} className="transition-colors hover:bg-soft">
                     <td className="px-4 py-3.5">
                       <span className="font-semibold text-ink">{row.title}</span>
-                      <span className="ml-2 text-muted">#{row.id}</span>
                     </td>
                     <td className="px-4 py-3.5">
                       <StatusBadge status={row.type} />
@@ -148,7 +147,7 @@ export default function UserDashboard({ onReport, query = "" }: Props) {
                     </td>
                     <td className="px-4 py-3.5 text-muted">{row.date ?? "—"}</td>
                     <td className="px-4 py-3.5 text-right">
-                      <Button variant="ghost" onClick={() => show(`Report #${row.id} details would open here`)}>
+                      <Button variant="ghost" onClick={() => show(`Details for “${row.title}” would open here`)}>
                         View
                       </Button>
                     </td>

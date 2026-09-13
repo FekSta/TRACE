@@ -1156,3 +1156,223 @@ contract is now enforced inside `Modal` and pinned by a regression test.
 - No workaround was used: no manual refocus-on-keystroke via refs/effects, no
   remount-avoidance hacks — the fix is the removal of the erroneous effect
   dependency.
+
+---
+
+## Self-service profile modal (decided 2026-09-13)
+
+**Context:** the sidebar footer's single "Logout" link became two side-by-side
+buttons, **Profile** + **Logout**, in the shared `AppShell`. "Profile" opens a
+modal where the signed-in user edits their own First name / Last name / Email /
+Phone number. The existing Admin "Add/Edit account" modal (see *Retrofit —
+Administrator User Management*, 2026-09-10) is unchanged and keeps its Role
+dropdown; role assignment stays an Administrator action.
+
+### Decisions
+
+1. **New endpoints, explicitly flagged (not silently added).** No self-service
+   profile route existed — `/auth/me` was absent from `Notes.md` §8.2 — so two
+   were added to the Auth router and documented in `Notes.md` §8.9:
+   `GET /auth/me` (the modal's prefill source) and `PATCH /auth/me` (save).
+   Both derive the user from the bearer token; there is no `{id}` in the path,
+   so neither can read or write another account.
+2. **Role is impossible by construction, not merely absent from the UI.**
+   `PATCH /auth/me` uses a dedicated `ProfileUpdateRequest` that has no `role`
+   or `status` field and sets `extra="forbid"`, so a direct call sending
+   `{"role":"Administrator"}` gets **422** rather than a silent no-op. The
+   brief allowed either "rejected" or "ignored"; rejection is the stronger
+   guarantee and is pinned by
+   `TestSelfServiceProfile::test_patch_me_rejects_role_and_does_not_change_it`,
+   which also re-reads the row to confirm the stored role did not move. Role
+   changes remain exclusive to `POST`/`PUT /admin/users`.
+3. **Prefill comes from `GET /auth/me`, not the JWT.** The token carries only
+   `FirstName`/`LastName`/`Role`, so email and phone have no client-side
+   source; the modal fetches the live row every time it opens.
+4. **Reuse, no new modal library or pattern.** `ProfileModal` is composed from
+   the shared `components/ui/Modal`, `Field`/`TextInput`, `Button`, and
+   `useToast` — the same primitives the Admin account modal uses.
+5. **Change password is its own guarded endpoint (also flagged).** A second
+   new route, `POST /auth/me/password`, rotates the caller's own password. It
+   requires the `current_password` (so a stolen token alone cannot lock the
+   owner out), mirrors the registration 8–72-char limit, and uses
+   `extra="forbid"`. A wrong current password returns **400, not 401** — the
+   token is still valid, and the frontend's `isAuthFailure` logs the user out
+   on 401/403, so 400 avoids a spurious logout. Documented in Notes.md §8.9.
+
+### Known gaps / notes
+
+- The sidebar's avatar/name block still reads the JWT claims, so a name change
+  saves but the sidebar label stays stale until the next login. The brief
+  required no visual changes above the footer and there is no token-refresh
+  flow, so this was left as-is. Follow-up candidate: refresh/re-issue the token
+  or add a session-update path to `auth-context`.
+- The modal edits only the four personal fields named in the brief;
+  `student_number` is intentionally not surfaced there (it stays
+  Administrator-managed on the account-management screen).
+- **Password change does not revoke existing JWTs.** Tokens are stateless, so
+  any already-issued token stays valid until it expires. A “log out other
+  sessions” feature would require server-side token state and is out of scope
+  for Phase 1; noted rather than silently assumed.
+
+### Verification
+
+- Backend: `backend/tests/test_auth.py` gained `TestSelfServiceProfile` —
+  prefill, update (trim + lower-case), phone clear, duplicate-email `409`,
+  role/status `422`, unauthenticated `401`, and all three roles reading their
+  own row.
+- Change-password tests (`TestChangePassword`): wrong current password is
+  `400` and leaves the old password working, a successful rotation logs in
+  with the new password and rejects the old one, short new password `422`,
+  unauthenticated `401`, and an unknown field (`role`) `422`.
+- Full backend suite **195 passed**; full frontend Vitest suite **185 passed**
+  (including `ProfileModal.test.tsx`, which asserts prefill from
+  `GET /auth/me`, the absence of a Role field, that the `PATCH` body never
+  contains `role`, and the change-password flow — mismatch blocked client-side
+  and the `POST /auth/me/password` body carrying no role); `tsc -b` clean.
+
+---
+
+## Display enrichment — Slice A: staff-only names on list payloads (2026-09-13)
+
+**Context / approval:** `prompts/agent-prompt-display-enrichment.md` proposed
+three slices (A = names, B = images, C = timestamps). The repository owner
+approved **Slice A only** ("names on list payloads, low risk, no migration")
+and, separately, an explicit frontend fix to the My Matches accept/reject
+button sizing. B and C are deliberately **not** implemented. (The prompt
+references an `AGENTS.md`; that file does not exist in the repo, so `Notes.md`
+and the existing module patterns were followed instead.)
+
+### Decisions
+
+1. **Naming (the prompt left this to implementation):** `reporter_name` on
+   both `LostItemResponse` and `FoundItemResponse` (the `user_id`
+   owner/reporter), and `claimant_name` + `officer_name` on `ClaimResponse`
+   (`user_id` / `officer_id`). All read-only and nullable.
+2. **Embedded the join; no new endpoint and no `GET /users`.** The prompt
+   allowed a staff-only `GET /users?ids=` alternative, but the portals already
+   fetch these list payloads, so a second round-trip and a new directory route
+   were not justified. Recorded here as required.
+3. **Staff-only population.** The name is filled only when `is_staff(caller)`
+   is true and is `null` for a plain `User` — including on that User's own
+   rows. This is the conservative reading of the cross-user-access rule: a
+   User keeps the existing `User #{id}` fallback and the API never confirms or
+   reveals another identity. Scoping is unchanged (cross-user row access is
+   still `404`, never `403`).
+4. **Modules own their joins, deliberately duplicated.**
+   `items.service.load_reporter_names` and `claims.service.load_user_names`
+   are near-identical on purpose — no shared cross-module user-directory
+   helper, exactly as the prompt requires. `claims` importing `is_staff` from
+   `items.service` is pre-existing and unchanged.
+5. **List responses only.** `GET /items/lost`, `GET /items/found`, and
+   `GET /claims` populate the fields; detail/create/update responses reuse the
+   same schema and leave them `null`. This matches the slice title and is
+   documented in `Notes.md` §9.9 and §11.8 so it is not mistaken for a bug.
+6. **One query per list, never per row.** Names are resolved with a single
+   batched `WHERE id IN (...)` lookup (`load_reporter_names` /
+   `load_user_names`), avoiding an N+1. Given the SQLite test DB, correctness
+   is pinned by a helper test rather than a timing measurement; the query
+   shape (one `IN` query for the whole page) is the proof.
+
+### Frontend button fix (explicit request, not part of Slice A)
+
+In `frontend/src/routes/user/MyMatches.tsx` the action container was `flex`
+with `flex-1` on the accept button only, so "Accept & Submit Claim" and
+"Reject" sized differently. It is now
+`grid grid-cols-2 gap-2.5 lg:w-[210px] lg:grid-cols-1` with both buttons
+`w-full`, which makes the two buttons identical in width at every breakpoint
+while keeping the stacked layout the mockup shows.
+
+### Verification
+
+- New focused tests: `backend/tests/test_display_enrichment.py` (12 tests) —
+  officer **and** admin see `reporter_name` on lost + found lists; a plain
+  User gets `null` on their own rows; a User's list never contains another
+  user's name; cross-user item access is `404` without a leaked name; officer
+  sees `claimant_name`/`officer_name` on `/claims` while the claimant sees
+  `null` and the officer's name appears nowhere in their response; plus direct
+  helper coverage of the batched lookup and `is_staff`.
+- Full backend suite green; full frontend Vitest suite green; `tsc -b` clean.
+
+### Known gaps / carried forward
+
+- **Slice B** (`GET /items/{kind}/{id}/attachments`, `primary_image_url`) and
+  **Slice C** (item timestamps + migration) remain unstarted.
+- Other list payloads (`/matches`, `/notifications`, dashboard reports) are
+  unchanged; the mockups' relative timestamps and thumbnails still use the
+  documented fallbacks.
+- The frontend does **not** yet read the new name fields (it keeps
+  `User #{id}`); adopting them is a separate, smaller follow-up, as the prompt
+  itself specifies.
+
+---
+
+## Display enrichment — Slice A.2/A.3: names on every display (2026-09-13)
+
+**Context / approval:** the owner asked that the portals **never display a raw
+ID** and instead show names / titles / other meaningful info on **all**
+screens. Planned in `prompts/agent-prompt-display-names-all-screens.md` and
+approved as **Slice A.2 (backend) + A.3 (frontend)**; the optional
+`GET /audit-logs` slice (A.4) was **deferred**. This builds on the uncommitted
+Slice A above.
+
+### Decisions
+
+1. **Owner self-visibility (supersedes Slice A).** Slice A returned `null` for a
+   plain `User` even on their own rows. That forced the User portal to render
+   item/claim IDs. We now populate the caller's **own** name on their own rows
+   (staff still get any row; **another** user's name is still never returned).
+   No identity is leaked — a User's scoped list only ever contains their own
+   rows.
+2. **`category_name` on item responses**, populated for every caller, because
+   all roles can read `/categories`. This removes `Category #{id}` without a
+   second client fetch.
+3. **Item titles on `ClaimResponse` and `MatchResponse`** (safe for anyone who
+   can see the claim/match), while person names stay **staff-only**.
+   **Behaviour change, called out deliberately:** a plain `User` now receives
+   the **counterparty item's title** on their matches/claims. Previously the
+   counterparty item was outside their scoped `/items` list, so the UI fell
+   back to `Found item #{id}`. The item pairing is the entire point of a match
+   or a claim (the User must know what they are claiming), and a title is not a
+   person's identity — so this is intended, not a leak. Staff-only name gating
+   is unchanged.
+4. **Enrichment now covers every item/claim response**, not just lists:
+   `GET` one, `POST` create, `PATCH`, and the claim verify/collect responses —
+   otherwise the officer/admin **modals** would still show IDs while their
+   tables did not.
+5. **Modules own their joins — deliberately duplicated.** The batched id→name
+   lookup now exists three times (`items.service.load_reporter_names`,
+   `claims.service.load_user_names`, `matching/router._user_names`) because the
+   brief forbids a shared cross-module "user directory" helper. No public
+   `GET /users`.
+6. **Labels, not a redesign.** Modal titles that embedded an id became generic
+   ("Approve claim", "Claim details", "Collect claim"); toasts/confirms use the
+   item title or a plain sentence.
+7. **Audit Log actor names deferred (A.4).** That screen needs a new
+   Administrator-only `GET /audit-logs` to resolve `actor_name`, which the
+   owner chose to defer. The screen currently renders its explained 404 gap
+   panel, so **no ID is displayed live**; its table markup still contains
+   `user #{user_id}` / `Entity #{id}` for the day the endpoint ships — flagged
+   here, intentionally not fixed in this pass.
+8. **Admin Reports "Claim ID" column kept** — a report may legitimately show
+   its own key (owner decision).
+
+### Verification
+
+- Backend: `backend/tests/test_display_enrichment.py` rewritten/expanded
+  (23 tests) — staff vs own-name vs other-user for items, claims and matches;
+  titles present for every caller; cross-user `404`; batched helpers. Full
+  backend suite **218 passed**.
+- Frontend: every raw-ID display replaced across Officer, Admin and User
+  portals; `lib/types.ts` extended; affected tests updated. Full Vitest suite
+  **185 passed**; `tsc -b` and `oxlint` clean.
+- Leftover-ID sweep (`rg` over `frontend/src/{routes,lib,components}`) returns
+  only `AuditLog.tsx` (the deferred A.4 case above) — zero on every live
+  screen.
+
+### Known gaps carried forward
+
+- `GET /audit-logs` (actor names) and `GET /notifications` remain unwired
+  (`Notes.md` §13.5). Both screens show explained gap panels; neither displays
+  an ID today.
+- Item thumbnails (Slice B) and item timestamps (Slice C) are still unstarted;
+  `Last updated` continues to use the report date.

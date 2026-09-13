@@ -25,6 +25,10 @@ export interface LostItem {
   date_lost: string | null;
   location_lost: string | null;
   status: "Reported" | "Matched" | "Claimed" | "Closed";
+  /** Display enrichment — staff on any row, own name on own rows, else null. */
+  reporter_name: string | null;
+  /** Safe for all roles (categories are public). */
+  category_name: string | null;
 }
 
 export interface FoundItem {
@@ -38,6 +42,8 @@ export interface FoundItem {
   date_found: string | null;
   storage_location: string | null;
   status: "Available" | "Claimed" | "Returned";
+  reporter_name: string | null;
+  category_name: string | null;
 }
 
 export interface Match {
@@ -48,6 +54,11 @@ export interface Match {
   match_reason: string | null;
   status: "Suggested" | "Accepted" | "Rejected";
   generated_at: string;
+  lost_item_title: string | null;
+  found_item_title: string | null;
+  /** Staff-only names — null for a plain User. */
+  lost_reporter_name: string | null;
+  found_reporter_name: string | null;
 }
 
 export interface Claim {
@@ -61,6 +72,13 @@ export interface Claim {
   verification_notes: string | null;
   collection_date: string | null;
   status: "Active" | "Completed" | "Cancelled";
+  /** Item titles are safe for anyone who can see the claim. */
+  lost_item_title: string | null;
+  found_item_title: string | null;
+  /** Claimant name: staff on any claim, own name on own claims, else null. */
+  claimant_name: string | null;
+  /** Staff-only — never expose the reviewer to a claimant. */
+  officer_name: string | null;
 }
 
 export interface Attachment {
@@ -95,6 +113,20 @@ export interface AuditLogEntry {
 }
 
 export interface ManagedUser {
+  id: number;
+  first_name: string;
+  last_name: string;
+  student_number: string | null;
+  email: string;
+  phone_number: string | null;
+  role: "User" | "Officer" | "Administrator";
+  status: "Active" | "Suspended" | "Inactive";
+  created_at: string;
+}
+
+/** The signed-in user's own account — response of `GET /auth/me`. Same shape
+ *  as `ManagedUser`; named separately because it is not admin-managed. */
+export interface CurrentUser {
   id: number;
   first_name: string;
   last_name: string;
