@@ -1,0 +1,41 @@
+version: 2
+
+updates:
+# Keep CI workflows up to date
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+    day: monday
+    time: "09:00"
+    timezone: America/Chicago
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: ci
+
+# Frontend dependencies (npm / package-lock.json)
+- package-ecosystem: npm
+  directory: /frontend
+  schedule:
+    interval: weekly
+    day: monday
+    time: "09:00"
+    timezone: America/Chicago
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: feat
+
+# Backend dependency specs (.in sources)
+# Dependabot updates the .in files only; the hash-pinned .txt lockfiles are
+# never hand-edited — regenerate them with `make update-requirements-backend`
+# in the same PR.
+- package-ecosystem: pip
+  directory: /backend/requirements
+  schedule:
+    interval: weekly
+    day: monday
+    time: "09:00"
+    timezone: America/Chicago
+  open-pull-requests-limit: 5
+  commit-message:
+    prefix: chore
