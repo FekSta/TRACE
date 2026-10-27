@@ -63,7 +63,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v7
         with:
