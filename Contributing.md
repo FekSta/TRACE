@@ -387,12 +387,14 @@ make check-migrations      # fail unless the history has exactly ONE head
 make check-env             # .env defines every variable from .env.example
 
 # Host environment (backend venv: Alembic CLI, ruff, pip-tools)
-make venv
-
-# Tests
+make venv# Tests
 make test-backend
 make test-frontend
-make test                  # both
+make test            # both
+
+# E2E (Playwright, drives the running docker compose stack — `make demo` first)
+make e2e-install     # once, to install Playwright's Chromium browser
+make test-e2e
 
 # Lint / format backend (ruff)
 make lint-backend
@@ -576,6 +578,7 @@ TRACE has two test suites, both run in CI:
 |---|---|---|---|
 | **Backend** | pytest (+ FastAPI `TestClient`) | `backend/tests/`, files named `test_<module>.py` | `make test-backend` |
 | **Frontend** | Vitest + Testing Library | `frontend/src/**/*.test.tsx` | `make test-frontend` |
+| **E2E** | Playwright (real browser) | `frontend/e2e/*.spec.ts` | `make test-e2e` |
 
 ### Backend tests
 
