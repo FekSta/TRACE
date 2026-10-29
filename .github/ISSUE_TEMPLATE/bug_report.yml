@@ -1,0 +1,167 @@
+name: Bug report
+description: Report a reproducible defect in TRACE.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TRACE.
+
+        Before submitting, search existing issues for the same problem.
+        Never include passwords, access tokens, production credentials,
+        personal information, or unredacted database records.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Select the component closest to the source of the problem.
+      options:
+        - React frontend
+        - FastAPI backend or API
+        - Authentication or authorization
+        - PostgreSQL or database migrations
+        - Lost/found item reporting
+        - Matching or search
+        - Claims and ownership verification
+        - Image or file uploads
+        - Celery background tasks
+        - Redis
+        - Notifications
+        - Docker Compose or deployment
+        - CI/CD or automated tests
+        - Documentation
+        - Unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Bug description
+      description: Describe what happened and why it appears incorrect.
+      placeholder: A clear description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable sequence that reproduces the issue.
+      placeholder: |
+        1. Sign in using a test account.
+        2. Open the relevant page or API endpoint.
+        3. Perform the action.
+        4. Observe the result.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should TRACE do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happens instead? Include any visible error or HTTP status.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Impact
+      description: How seriously does this affect use of TRACE?
+      options:
+        - Critical - core service unavailable or serious security risk
+        - High - major workflow blocked
+        - Medium - functionality impaired with a workaround
+        - Low - minor defect or inconvenience
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: TRACE version or commit
+      description: Provide the release version or Git commit SHA, if known.
+      placeholder: "e.g. v1.0.0 or a1b2c3d"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Local development
+        - Docker Compose
+        - CI/test environment
+        - Deployed environment
+        - Other
+        - Unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: frontend_details
+    attributes:
+      label: Frontend details
+      description: If applicable, provide browser/OS details, affected page, and sanitized console errors.
+      placeholder: Browser, version, page, and relevant console output.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: backend_details
+    attributes:
+      label: Backend or API details
+      description: If applicable, provide the endpoint, HTTP method/status, request ID, and sanitized traceback.
+      placeholder: |
+        Method and endpoint:
+        HTTP status:
+        Request/correlation ID:
+        Sanitized error:
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: services
+    attributes:
+      label: Database, Redis, Celery, or Docker details
+      description: Include relevant service health, migration errors, task failures, or sanitized logs.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional logs or screenshots
+      description: Include relevant sanitized logs or links. Remove tokens, personal information, and secrets.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues for duplicates.
+          required: true
+        - label: I provided reproducible steps or explained why reproduction is not possible.
+          required: true
+        - label: I removed credentials, secrets, and sensitive user data.
+          required: true

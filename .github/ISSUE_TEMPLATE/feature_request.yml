@@ -1,0 +1,131 @@
+name: Feature request
+description: Propose an improvement to TRACE.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to propose a feature or meaningful improvement to TRACE,
+        the lost-and-found reporting, matching, and recovery platform.
+
+        Please search existing issues first. Do not include private user data
+        or production credentials.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or user need
+      description: What problem exists today, and who experiences it?
+      placeholder: Describe the problem and its impact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior without requiring a particular implementation.
+      placeholder: Explain what TRACE should do.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: user_role
+    attributes:
+      label: Primary user or stakeholder
+      options:
+        - Student or general user
+        - Person reporting a lost item
+        - Person reporting a found item
+        - Item owner submitting a claim
+        - Lost-and-found officer
+        - Administrator
+        - Developer or maintainer
+        - Multiple roles
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Relevant component
+      options:
+        - React frontend
+        - FastAPI backend or API
+        - Authentication or authorization
+        - PostgreSQL or data model
+        - Item reporting and management
+        - Matching or search
+        - Claims and verification
+        - Image or file uploads
+        - Celery or Redis
+        - Notifications
+        - Reporting or administration
+        - Docker, CI/CD, or deployment
+        - Documentation
+        - Cross-cutting or unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable conditions that would make this feature complete.
+      placeholder: |
+        - [ ] A user can ...
+        - [ ] The system validates ...
+        - [ ] Errors are handled ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe other approaches or existing workarounds, if any.
+    validations:
+      required: false
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture and data considerations
+      description: Mention potential API, database, background-task, file-storage, or integration implications if known. Implementation proposals are optional.
+      placeholder: API contracts, data model, migrations, Celery tasks, Redis, deployment, or compatibility.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: User impact
+      options:
+        - High - addresses a major workflow problem
+        - Medium - meaningful improvement
+        - Low - convenience or polish
+        - Unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add mockups, sanitized examples, relevant links, or further context.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and discussions for similar proposals.
+          required: true
+        - label: I explained the problem and intended outcome.
+          required: true
+        - label: I removed sensitive information.
+          required: true
