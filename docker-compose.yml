@@ -45,7 +45,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-trace}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trace_local_password}
     ports:
-      - "5432:5432"
+      # Host-side binding is only for host tools (make test-backend, psql).
+      # POSTGRES_HOST_PORT remaps it locally when another Postgres already
+      # owns 5432 — containers always talk to db:5432 over the compose network,
+      # so the stack's behavior is identical either way.
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - trace_pgdata:/var/lib/postgresql/data
     healthcheck:

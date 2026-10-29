@@ -4,3 +4,4 @@ pytest
 pytest-asyncio
 pytest-cov
 httpx
+Pygments==2.21.0

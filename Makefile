@@ -23,7 +23,7 @@
 .PHONY: demo seed up down clean logs ps \
 	venv check-env check-migrations migrate-backend \
 	update-requirements-backend update-requirements-frontend update-requirements \
-	test-frontend test-backend test \
+	test-frontend test-backend test test-e2e e2e-install \
 	lint-backend lint-backend-fix
 
 demo: ## Build, start, migrate and seed the full stack, then wait until ready
@@ -160,6 +160,17 @@ test-backend: ## Run the backend unit + coverage test suite locally (same suite 
 	  .venv/bin/python -m pytest -v --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml
 
 test: test-backend test-frontend ## Run both backend and frontend test suites locally
+
+# E2E specs live in frontend/e2e/ and drive the REAL docker compose stack
+# (nginx React bundle on :5173 -> FastAPI :8000), so they need the stack up:
+# `make demo` first (it also runs the idempotent seed the assertions rely on).
+e2e-install: ## Install Playwright browsers once (frontend devDependency already installed via npm install)
+	cd frontend && npx playwright install chromium
+
+test-e2e: ## Run the Playwright E2E suite against the running docker compose stack (make demo first)
+	@curl -fs http://localhost:8000/health >/dev/null 2>&1 || { echo "ERROR: backend is not running — bring the stack up first: make demo"; exit 1; }
+	@curl -fs http://localhost:5173 >/dev/null 2>&1 || { echo "ERROR: frontend is not serving on localhost:5173 — bring the stack up first: make demo"; exit 1; }
+	cd frontend && npx playwright test
 
 lint-backend: ## Lint (and format-check) the backend with ruff
 	@test -x backend/.venv/bin/python || { echo "ERROR: backend/.venv is missing — run 'make venv' first"; exit 1; }

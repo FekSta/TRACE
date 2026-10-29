@@ -9,6 +9,9 @@ shell inside the backend runtime.
 Weights (max total = 100; full formula and rationale in `Review.md` §Module 4):
 
 - **Category  40 pts** — hard gate: different categories → score 0.00.
+- **Impossible dates** — hard gate: a FoundItem dated *before* the
+  LostItem's loss (`date_found < date_lost`) is physically impossible →
+  score 0.00 regardless of similarity.
 - **Location  15 pts** — token-set Jaccard similarity between
   ``location_lost`` and ``storage_location`` (the FoundItem's storage
   location is the only location we store; interpretation recorded in
@@ -117,6 +120,24 @@ def score_pair(lost: Mapping, found: Mapping) -> MatchResult:
     # Category credit (gate passed or one side missing).
     total += _CATEGORY_W
     reasons.append(f"same category (category {lost_cat or found_cat})")
+
+    # --- Date impossibility (hard gate) ------------------------------------
+    # An item cannot be found before it was lost. FoundItem on/before the
+    # loss date never matches, no matter how similar everything else is.
+    d_gate_lost = _as_date(lost.get("date_lost"))
+    d_gate_found = _as_date(found.get("date_found"))
+    if (
+        d_gate_lost is not None
+        and d_gate_found is not None
+        and d_gate_found < d_gate_lost
+    ):
+        return MatchResult(
+            score=Decimal("0.00"),
+            reason=(
+                "Impossible dates: found item predates the loss "
+                f"(found {_fmt(d_gate_found)} before lost {_fmt(d_gate_lost)})"
+            ),
+        )
 
     # --- Location ----------------------------------------------------------
     loc_lost = lost.get("location_lost")

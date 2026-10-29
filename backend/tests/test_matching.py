@@ -176,6 +176,65 @@ class TestSimilarityEdgeCases:
         result = score_pair(lost, found)
         assert result.score == 0.00
 
+    def test_found_item_predating_loss_never_matches(self):
+        """Dates are a hard gate — found BEFORE lost is physically impossible.
+
+        Even a byte-identical description/location cannot match: an item can
+        not be found before it was reported lost (issue: lost 2026-10-27 must
+        not match a found item dated 2026-10-26).
+        """
+        lost = {
+            "category_id": 1,
+            "description": "Black Nike backpack with a silver laptop sleeve",
+            "date_lost": date(2026, 10, 27),
+            "location_lost": "Library",
+        }
+        found = {
+            "category_id": 1,
+            "description": "Black Nike backpack with a silver laptop sleeve",
+            "date_found": date(2026, 10, 26),  # one day BEFORE the loss
+            "storage_location": "Library",
+        }
+        result = score_pair(lost, found)
+        assert result.score == 0.00
+        assert result.score < MATCH_THRESHOLD
+        assert "Impossible dates" in result.reason
+
+    def test_found_item_on_loss_date_still_matches(self):
+        """Same-day lost/found is possible (item found after report) — matches."""
+        lost = {
+            "category_id": 1,
+            "date_lost": date(2026, 10, 27),
+        }
+        found = {
+            "category_id": 1,
+            "date_found": date(2026, 10, 27),
+        }
+        result = score_pair(lost, found)
+        assert result.score == 55.00  # 40 category + 15 date (no gate)
+
+    def test_found_item_after_loss_date_scores_normally(self):
+        """Found AFTER lost is possible — the existing decay still applies."""
+        lost = {
+            "category_id": 1,
+            "date_lost": date(2026, 8, 10),
+        }
+        found = {
+            "category_id": 1,
+            "date_found": date(2026, 8, 13),  # 3 days after → 15 * (1 - 3/14)
+        }
+        result = score_pair(lost, found)
+        from decimal import Decimal
+
+        assert result.score == Decimal("51.79")  # 40 + 11.79
+
+    def test_impossible_dates_gate_mentions_actual_dates(self):
+        lost = {"category_id": 1, "date_lost": date(2026, 10, 27)}
+        found = {"category_id": 1, "date_found": date(2026, 10, 26)}
+        result = score_pair(lost, found)
+        assert "2026-10-26" in result.reason
+        assert "2026-10-27" in result.reason
+
     def test_missing_category_on_one_side_gives_full_category_credit(self):
         """If one side has no category_id, the gate passes with full 40 pts."""
         lost = {
