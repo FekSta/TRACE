@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+
+contact_links:
+  - name: TRACE Documentation
+    url: https://github.com/FekSta/TRACE#readme
+    about: Read the project overview, architecture, setup, and contribution guidance.
+
+  - name: Report a Security Vulnerability
+    url: https://github.com/FekSta/TRACE/security/advisories/new
+    about: Report security vulnerabilities privately instead of disclosing exploit details publicly.
